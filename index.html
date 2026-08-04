@@ -669,14 +669,15 @@
         <p class="auth-switch">Нет аккаунта? <button type="button" class="link-btn" data-action="show-register">Регистрация</button></p>
       </div>
 
-      <div id="authYandexSetup" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);">
+      <div id="authYandexSetup" class="hidden" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);">
         <div class="form-group" style="margin-bottom:8px;">
-          <label style="font-size:0.72rem;">Yandex ClientID (для входа через Яндекс)</label>
-          <input type="text" id="authYandexClientId" placeholder="Вставьте ClientID из oauth.yandex.ru" autocomplete="off">
+          <label style="font-size:0.72rem;">Yandex ClientID (только если не зашит в код)</label>
+          <input type="text" id="authYandexClientId" placeholder="ClientID" autocomplete="off">
         </div>
         <button type="button" class="btn btn-secondary btn-sm btn-block" data-action="save-yandex-clientid">Сохранить ClientID</button>
         <p class="auth-hint" id="yandexHint" style="margin-top:8px;"></p>
       </div>
+      <p class="auth-hint" id="yandexHintInline" style="margin-top:10px;"></p>
     </div>
   </div>
 
@@ -761,13 +762,7 @@
         </div>
       </div>
 
-      <div class="settings-block">
-        <h3>Яндекс ID (OAuth)</h3>
-        <p class="text-sm text-muted mb-2" style="margin-bottom:8px;">Создайте приложение на <a href="https://oauth.yandex.ru/" target="_blank" rel="noopener">oauth.yandex.ru</a>, вставьте ClientID. Redirect URI = адрес этой страницы (https). В правах приложения включите: данные пользователя + <b>доступ к папке приложения на Диске</b> — иначе синхронизация между устройствами не заработает.</p>
-        <div class="form-group" style="margin:0;">
-          <input type="text" id="settingYandexClientId" placeholder="ClientID приложения Яндекс">
-        </div>
-      </div>
+
       <div class="settings-block">
         <h3>Данные</h3>
         <div class="storage-warn" id="syncStatusBox">
@@ -923,7 +918,7 @@
       yandexClientId: ''
     },
     /* ClientID можно задать здесь или в Настройках */
-    YANDEX_CLIENT_ID: ''
+    YANDEX_CLIENT_ID: 'ca84af634c284a99b2a6ab6ce1d9b378'
   };
 
   /* =========================================================
@@ -1331,15 +1326,13 @@
     startYandexOAuth() {
       var clientId = this.getYandexClientId();
       if (!clientId) {
-        UI.showToast('Укажите Yandex ClientID в поле ниже');
-        var hint = document.getElementById('yandexHint');
-        if (hint) {
-          hint.innerHTML = 'Создайте приложение на <a href="https://oauth.yandex.ru/" target="_blank" rel="noopener">oauth.yandex.ru</a>. '
-            + 'Права: данные пользователя + папка приложения на Диске. '
-            + 'Redirect URI = адрес этой страницы. Вставьте ClientID в поле выше и нажмите «Сохранить».';
-        }
+        UI.showToast('ClientID не задан');
         var setup = document.getElementById('authYandexSetup');
-        if (setup) setup.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (setup) setup.classList.remove('hidden');
+        var hint = document.getElementById('yandexHint') || document.getElementById('yandexHintInline');
+        if (hint) {
+          hint.innerHTML = 'Нужен ClientID приложения на <a href="https://oauth.yandex.ru/" target="_blank" rel="noopener">oauth.yandex.ru</a>.';
+        }
         return;
       }
       var redirect = window.location.origin + window.location.pathname;
@@ -1891,8 +1884,6 @@
       this.$('settingCalendarName').value = s.calendarName || '';
       this.$('settingDark').checked = !!s.dark;
       this.$('settingColor').value = s.primary || '#e11d48';
-      var yid = this.$('settingYandexClientId');
-      if (yid) yid.value = s.yandexClientId || CONFIG.YANDEX_CLIENT_ID || '';
       document.querySelectorAll('.style-option').forEach(function (el) {
         el.classList.toggle('active', el.dataset.style === (s.calStyle || 'standard'));
       });
@@ -2366,14 +2357,10 @@
       UI.showToast(paid ? 'Оплачено' : 'Оплата снята');
     },
     saveSettingsFromForm() {
-      var yidEl = UI.$('settingYandexClientId');
-      var yid = yidEl ? yidEl.value.trim() : '';
-      if (yid) Auth.saveYandexClientId(yid);
       Services.updateSettings({
         calendarName: UI.$('settingCalendarName').value.trim(),
         dark: UI.$('settingDark').checked,
-        primary: UI.$('settingColor').value,
-        yandexClientId: yid
+        primary: UI.$('settingColor').value
       });
       UI.applyTheme();
       UI.renderSchedule();
@@ -2623,8 +2610,6 @@
     UI.$('settingCalendarName').addEventListener('change', function () { Controllers.saveSettingsFromForm(); });
     UI.$('settingDark').addEventListener('change', function () { Controllers.saveSettingsFromForm(); });
     UI.$('settingColor').addEventListener('change', function () { Controllers.saveSettingsFromForm(); });
-    var yandexInput = UI.$('settingYandexClientId');
-    if (yandexInput) yandexInput.addEventListener('change', function () { Controllers.saveSettingsFromForm(); });
     UI.$('styleOptions').addEventListener('click', function (e) {
       var opt = e.target.closest('[data-style]');
       if (opt) Controllers.setCalStyle(opt.dataset.style);
