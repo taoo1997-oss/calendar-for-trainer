@@ -193,10 +193,24 @@
     }
     .club-group-card:active { transform: scale(0.99); }
     .club-group-title { font-weight: 600; font-size: 0.95rem; margin-bottom: 4px; }
-    .club-group-meta { font-size: 0.75rem; color: var(--text-muted); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-    .club-money-bubble {
-      display: inline-flex; align-items: center; gap: 4px;
-      padding: 3px 10px; border-radius: 999px; font-size: 0.72rem; font-weight: 600;
+        .club-money-bubble {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      min-width: 72px;
+      min-height: 26px;
+      max-height: 28px;
+      padding: 4px 12px;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      line-height: 1;
+      white-space: nowrap;
+      flex: 0 0 auto;
+      align-self: center;
+      box-sizing: border-box;
+      vertical-align: middle;
       background: rgba(16,185,129,0.12); color: #059669;
       border: 1.5px solid rgba(16,185,129,0.45);
     }
@@ -207,6 +221,13 @@
     .club-money-bubble.empty {
       background: rgba(239,68,68,0.1); color: #dc2626;
       border-color: rgba(239,68,68,0.4);
+    }
+    .club-group-meta {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+      font-size: 0.75rem; color: var(--text-muted);
+    }
+    .club-group-card {
+      display: block;
     }
     .club-member-row {
       display: flex; align-items: center; gap: 10px;
@@ -391,6 +412,19 @@
       border-color: var(--border);
       border-left-color: #a8a29e;
     }
+    .time-class.club-group {
+      background: #eff6ff;
+      border-color: #93c5fd;
+      border-left-color: #2563eb;
+    }
+    .time-class.club-group .time-class-time { color: #1d4ed8; }
+    .time-class.club-group .time-class-paid-count {
+      background: #dbeafe; color: #1d4ed8;
+    }
+    [data-theme="dark"] .time-class.club-group {
+      background: #1e3a5f; border-color: #1e40af;
+    }
+    [data-theme="dark"] .time-class.club-group .time-class-time { color: #93c5fd; }
     [data-theme="dark"] .time-class { background: var(--card); }
     [data-theme="dark"] .time-class.paid-all { background: #064e3b; border-color: #065f46; }
     [data-theme="dark"] .time-class.has-unpaid { background: #4c0519; border-color: #9f1239; }
@@ -413,15 +447,42 @@
     .time-class.paid-all .time-class-paid-count { color: #059669; }
     .time-class.has-unpaid .time-class-paid-count { color: #e11d48; }
 
-    [data-cal-style="compact"] .time-slot { height: 48px; }
-    [data-cal-style="compact"] .time-content { min-height: 32px; }
-    [data-cal-style="compact"] .time-class { padding: 6px 10px; }
-    [data-cal-style="compact"] .time-class-clients,
-    [data-cal-style="compact"] .time-class-notes { display: none; }
-
-    [data-cal-style="cards"] .time-label { display: none; }
-    [data-cal-style="cards"] .time-slot { margin-bottom: 0; }
-    [data-cal-style="cards"] .time-class { margin-bottom: 8px; padding: 14px 16px; }
+    /* Режим «Карточки»: список без пустой решётки */
+    [data-cal-style="cards"] .time-grid {
+      border: none;
+      background: transparent;
+      height: auto !important;
+      overflow: visible;
+    }
+    [data-cal-style="cards"] .time-slot { display: none !important; }
+    [data-cal-style="cards"] .time-events {
+      position: static !important;
+      left: auto; right: auto; top: auto; bottom: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: auto;
+    }
+    [data-cal-style="cards"] .time-class {
+      position: relative !important;
+      top: auto !important;
+      left: auto !important;
+      right: auto !important;
+      height: auto !important;
+      min-height: 0;
+      margin: 0;
+      padding: 14px 16px;
+      border-radius: 16px;
+      overflow: visible;
+      box-shadow: 0 2px 8px rgba(28,25,23,0.06);
+    }
+    [data-cal-style="cards"] .time-class-clients {
+      margin-top: 8px;
+    }
+    [data-cal-style="cards"] .time-class-notes {
+      -webkit-line-clamp: 2;
+      margin-top: 6px;
+    }
 
     .search-box { position: relative; margin-bottom: 14px; }
     .search-box input {
@@ -876,8 +937,7 @@
         <h3>Стиль календаря</h3>
         <div class="style-options" id="styleOptions">
           <div class="style-option active" data-style="standard"><strong>Стандартный</strong><span>Решётка времени с деталями</span></div>
-          <div class="style-option" data-style="compact"><strong>Компактный</strong><span>Только время, меньше места</span></div>
-          <div class="style-option" data-style="cards"><strong>Карточки</strong><span>Крупные карточки занятий</span></div>
+          <div class="style-option" data-style="cards"><strong>Карточки</strong><span>Список занятий крупными карточками</span></div>
         </div>
       </div>
 
@@ -982,7 +1042,14 @@
             <input type="number" class="chip-custom" id="durationCustom" min="5" max="300" placeholder="своя" inputmode="numeric">
           </div>
         </div>
-        <div class="form-group"><label>Клиенты</label><div class="client-select-list" id="classClientSelect"></div></div>
+        <div class="form-group">
+          <label>Группа клуба</label>
+          <select id="classClubGroup">
+            <option value="">— не выбрана —</option>
+          </select>
+          <p class="text-sm text-muted" style="margin-top:6px;font-size:0.72rem;">Группа из раздела «Клуб» — в расписании синим, без оплаты за занятие</p>
+        </div>
+        <div class="form-group"><label>Клиенты (разовые)</label><div class="client-select-list" id="classClientSelect"></div></div>
         <div class="form-group"><label>Комментарий</label><textarea id="classNotes" rows="2" placeholder="Зал, тема…"></textarea></div>
         <div class="form-group" style="margin-bottom:12px;">
           <label class="checkbox-item" style="margin:0;cursor:pointer;">
@@ -1286,6 +1353,8 @@
       return free;
     },
     classPaymentStatus(cls) {
+      // Занятие группы клуба — отдельный синий стиль, без оплаты занятия
+      if (cls && cls.clubGroupId) return 'club-group';
       var ids = cls.clientIds || [];
       if (!ids.length) return 'no-clients';
       var paidCount = ids.filter(function (id) { return cls.payments && cls.payments[id]; }).length;
@@ -1945,6 +2014,7 @@
         duration: data.duration || 60, notes: (data.notes || '').trim(),
         clientIds: data.clientIds || [], payments: payments,
         isGroup: !!isGroup,
+        clubGroupId: data.clubGroupId || null,
         createdAt: new Date().toISOString()
       };
       State.classes.push(cls);
@@ -1967,6 +2037,7 @@
       cls.notes = (data.notes || '').trim();
       cls.clientIds = data.clientIds || [];
       cls.payments = payments;
+      cls.clubGroupId = data.clubGroupId || null;
       // Явно сохраняем выбор пользователя; не сбрасываем группу «само»
       if (typeof data.isGroup === 'boolean') {
         cls.isGroup = data.isGroup;
@@ -2347,7 +2418,9 @@
     applyTheme() {
       var s = State.settings;
       document.documentElement.setAttribute('data-theme', s.dark ? 'dark' : 'light');
-      document.documentElement.setAttribute('data-cal-style', s.calStyle || 'standard');
+      var calStyle = s.calStyle || 'standard';
+      if (calStyle === 'compact') calStyle = 'standard';
+      document.documentElement.setAttribute('data-cal-style', calStyle);
       document.documentElement.style.setProperty('--primary', s.primary);
       document.documentElement.style.setProperty('--primary-dark', Domain.shadeColor(s.primary, -20));
       document.documentElement.style.setProperty('--primary-light', s.dark ? Domain.shadeColor(s.primary, -55) : Domain.shadeColor(s.primary, 88));
@@ -2469,6 +2542,7 @@
       var startMin = Domain.timeToMinutes(cls.time);
       var z = 2 + Math.floor(startMin / 15);
 
+      var clubG = cls.clubGroupId ? State.clubGroups.find(function (g) { return g.id === cls.clubGroupId; }) : null;
       var namesHtml = clients.length
         ? clients.map(function (c) {
             var paid = cls.payments && cls.payments[c.id];
@@ -2481,12 +2555,16 @@
             }
             return '<span class="name-chip ' + (paid ? 'paid' : 'unpaid') + '">' + Domain.escapeHtml(c.name) + abMark + '</span>';
           }).join('')
-        : '<span class="text-muted">Без клиентов</span>';
+        : (clubG
+            ? '<span class="name-chip paid" style="border-color:#93c5fd;background:#eff6ff;color:#1d4ed8;">🏆 ' + Domain.escapeHtml(clubG.name) + '</span>'
+            : '<span class="text-muted">Без клиентов</span>');
       var titleHtml = cls.title ? '<div class="time-class-title">' + Domain.escapeHtml(cls.title) + '</div>' : '';
       var notesHtml = cls.notes ? '<div class="time-class-notes">📝 ' + Domain.escapeHtml(cls.notes) + '</div>' : '';
-      var countHtml = clients.length
-        ? '<span class="time-class-paid-count">' + (paidCount === clients.length ? '✓ ' + paidCount + '/' + clients.length : '✗ ' + paidCount + '/' + clients.length) + '</span>'
-        : '';
+      var countHtml = clubG
+        ? '<span class="time-class-paid-count">Клуб</span>'
+        : (clients.length
+          ? '<span class="time-class-paid-count">' + (paidCount === clients.length ? '✓ ' + paidCount + '/' + clients.length : '✗ ' + paidCount + '/' + clients.length) + '</span>'
+          : '');
 
       return '<div class="time-class ' + status + '" data-action="class-open" data-id="' + cls.id +
         '" style="top:' + top + 'px;height:' + height + 'px;z-index:' + z + '">' +
@@ -2594,6 +2672,7 @@
       this.$('classTitle').value = '';
       var groupCb = this.$('classIsGroup');
       if (groupCb) { groupCb.checked = false; groupCb.dataset.userTouched = ''; }
+      this.fillClassClubGroupSelect(cls && cls.clubGroupId ? cls.clubGroupId : '');
       if (cls) {
         this.$('classModalTitle').textContent = 'Редактировать';
         this.$('classId').value = cls.id;
@@ -2609,6 +2688,25 @@
         this.$('classModalTitle').textContent = 'Новое занятие';
         this.renderClassClientSelect([]);
       }
+    },
+    fillClassClubGroupSelect(selectedId) {
+      var sel = this.$('classClubGroup');
+      if (!sel) return;
+      var html = '<option value="">— не выбрана —</option>';
+      var groups = State.clubGroups.slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); });
+      groups.forEach(function (g) {
+        html += '<option value="' + g.id + '"' + (selectedId === g.id ? ' selected' : '') + '>' +
+          Domain.escapeHtml(g.name) + ' (' + ((g.memberIds && g.memberIds.length) || 0) + ' чел.)</option>';
+      });
+      sel.innerHTML = html;
+      sel.onchange = function () {
+        var gid = sel.value;
+        if (!gid) return;
+        var g = State.clubGroups.find(function (x) { return x.id === gid; });
+        if (!g) return;
+        var titleEl = UI.$('classTitle');
+        if (titleEl && !titleEl.value.trim()) titleEl.value = g.name;
+      };
     },
     renderClassClientSelect(selectedIds) {
       var box = this.$('classClientSelect');
@@ -3025,6 +3123,8 @@
       e.preventDefault();
       var id = UI.$('classId').value;
       var groupEl = UI.$('classIsGroup');
+      var clubGroupEl = UI.$('classClubGroup');
+      var clubGroupId = clubGroupEl && clubGroupEl.value ? clubGroupEl.value : null;
       var data = {
         title: UI.$('classTitle').value,
         date: UI.$('classDate').value,
@@ -3032,8 +3132,13 @@
         duration: parseInt(UI.$('classDuration').value, 10) || 60,
         notes: UI.$('classNotes').value,
         clientIds: Array.from(document.querySelectorAll('#classClientSelect input:checked')).map(function (cb) { return cb.value; }),
-        isGroup: groupEl ? !!groupEl.checked : false
+        isGroup: groupEl ? !!groupEl.checked : false,
+        clubGroupId: clubGroupId
       };
+      if (clubGroupId && !data.title.trim()) {
+        var cg = State.clubGroups.find(function (g) { return g.id === clubGroupId; });
+        if (cg) data.title = cg.name;
+      }
       var overlaps = Domain.findOverlaps(State.classes, data.date, data.time, data.duration, id || null);
       if (overlaps.length) {
         var free = Domain.findFreeSlots(State.classes, data.date, data.duration, id || null);
