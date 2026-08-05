@@ -1617,6 +1617,21 @@
       }
       return id;
     },
+    /** Capacitor / native? */
+    isNativeApp() {
+      try {
+        return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+      } catch (e) { return false; }
+    },
+    /** Redirect URI: в APK — deep link, на сайте — текущий URL */
+    getOAuthRedirectUri() {
+      if (this.isNativeApp()) {
+        // Кастомная схема → Android вернёт в приложение, а не в Chrome/localhost
+        return 'dancetrainer://oauth';
+      }
+      var path = window.location.pathname || '/';
+      return window.location.origin + path;
+    },
     /** Реальный OAuth Яндекс (implicit flow для SPA) + доступ к папке приложения на Диске */
     startYandexOAuth() {
       var clientId = this.getYandexClientId();
@@ -1630,13 +1645,14 @@
         }
         return;
       }
-      var redirect = window.location.origin + window.location.pathname;
-      if (window.location.protocol === 'file:') {
+      var redirect = this.getOAuthRedirectUri();
+      if (window.location.protocol === 'file:' && !this.isNativeApp()) {
         UI.showToast('Яндекс ID работает только по https:// (залейте на хостинг)');
         return;
       }
       var state = Domain.uid();
       try { sessionStorage.setItem('ya_oauth_state', state); } catch (e) {}
+      try { sessionStorage.setItem('ya_oauth_redirect', redirect); } catch (e) {}
       // cloud_api:disk.app_folder — изолированная папка приложения для синхронизации данных
       var scope = 'login:info login:email cloud_api:disk.app_folder';
       var url = 'https://oauth.yandex.ru/authorize'
@@ -1646,6 +1662,24 @@
         + '&scope=' + encodeURIComponent(scope)
         + '&state=' + encodeURIComponent(state);
       window.location.href = url;
+    },
+    /** Разбор токена из произвольного URL (deep link или hash) */
+    parseTokenFromUrl(url) {
+      if (!url) return null;
+      var hash = '';
+      var hi = url.indexOf('#');
+      if (hi !== -1) hash = url.substring(hi + 1);
+      else {
+        var qi = url.indexOf('?');
+        if (qi !== -1) hash = url.substring(qi + 1);
+      }
+      if (hash.indexOf('access_token=') === -1) return null;
+      var params = {};
+      hash.split('&').forEach(function (pair) {
+        var kv = pair.split('=');
+        params[decodeURIComponent(kv[0])] = decodeURIComponent((kv[1] || '').replace(/\+/g, ' '));
+      });
+      return params.access_token || null;
     },
     /** Обработка возврата с oauth.yandex.ru (#access_token=...) */
     async handleYandexRedirect() {
@@ -3698,6 +3732,7 @@
     Storage.init();
 
     // Возврат с Яндекс OAuth
+    if (window.setupNativeOAuthListener) setupNativeOAuthListener();
     var yaUser = await Auth.handleYandexRedirect();
     if (yaUser) {
       await enterApp(yaUser);
@@ -3726,5 +3761,48 @@
 })();
 
 </script>
+
+<script>
+  
+    // Deep link после Яндекс OAuth (Capacitor)
+    window.setupNativeOAuthListener = function () {
+      try {
+        if (!window.Capacitor || !Capacitor.Plugins || !Capacitor.Plugins.App) return;
+        Capacitor.Plugins.App.addListener('appUrlOpen', function (data) {
+          var token = Auth.parseTokenFromUrl(data && data.url);
+          if (!token) return;
+          window.location.hash = 'access_token=' + encodeURIComponent(token);
+          Auth.handleYandexRedirect();
+        });
+      } catch (e) { console.warn('OAuth deep link listener', e); }
+    };
+
+  // Offline shell
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      if (window.setupNativeOAuthListener) setupNativeOAuthListener();
+      navigator.serviceWorker.register('./sw.js').catch(function (e) {
+        console.warn('SW register failed', e);
+      });
+    });
+  }
+  // Capacitor: статус сети (если плагин доступен)
+  window.addEventListener('DOMContentLoaded', async function () {
+    try {
+      if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Network) {
+        var Network = window.Capacitor.Plugins.Network;
+        var status = await Network.getStatus();
+        window.__isOnline = status.connected;
+        Network.addListener('networkStatusChange', function (s) {
+          window.__isOnline = s.connected;
+          if (window.UI && UI.showToast) {
+            UI.showToast(s.connected ? 'Сеть появилась' : 'Офлайн-режим');
+          }
+        });
+      }
+    } catch (e) { console.warn(e); }
+  });
+</script>
+
 </body>
 </html>
