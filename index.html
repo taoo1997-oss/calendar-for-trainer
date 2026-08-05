@@ -175,6 +175,82 @@
     .form-row { display: flex; gap: 12px; }
     .form-row .form-group { flex: 1; }
 
+
+    /* —— Клуб —— */
+    .club-summary {
+      display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;
+    }
+    .club-summary-chip {
+      flex: 1; min-width: 120px; background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; padding: 12px; text-align: center;
+    }
+    .club-summary-chip .val { font-size: 1.15rem; font-weight: 700; color: var(--primary); letter-spacing: -0.02em; }
+    .club-summary-chip .lbl { font-size: 0.68rem; color: var(--text-muted); margin-top: 2px; }
+    .club-group-card {
+      background: var(--card); border: 1.5px solid var(--border); border-radius: 14px;
+      padding: 14px 16px; margin-bottom: 10px; cursor: pointer;
+      box-shadow: var(--shadow);
+    }
+    .club-group-card:active { transform: scale(0.99); }
+    .club-group-title { font-weight: 600; font-size: 0.95rem; margin-bottom: 4px; }
+    .club-group-meta { font-size: 0.75rem; color: var(--text-muted); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .club-money-bubble {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 10px; border-radius: 999px; font-size: 0.72rem; font-weight: 600;
+      background: rgba(16,185,129,0.12); color: #059669;
+      border: 1.5px solid rgba(16,185,129,0.45);
+    }
+    .club-money-bubble.partial {
+      background: rgba(245,158,11,0.12); color: #c2410c;
+      border-color: rgba(245,158,11,0.5);
+    }
+    .club-money-bubble.empty {
+      background: rgba(239,68,68,0.1); color: #dc2626;
+      border-color: rgba(239,68,68,0.4);
+    }
+    .club-member-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px; border-radius: 12px; margin-bottom: 6px;
+      border: 1.5px solid var(--border); background: var(--card);
+    }
+    .club-member-row.paid {
+      background: rgba(16,185,129,0.08);
+      border-color: rgba(16,185,129,0.4);
+    }
+    .club-member-row.unpaid {
+      background: rgba(239,68,68,0.06);
+      border-color: rgba(239,68,68,0.35);
+    }
+    .club-member-num {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: var(--primary-light); color: var(--primary);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.75rem; font-weight: 700; flex-shrink: 0;
+    }
+    .club-member-info { flex: 1; min-width: 0; cursor: pointer; }
+    .club-member-name { font-weight: 500; font-size: 0.875rem; }
+    .club-discount-badge {
+      display: inline-block; margin-left: 6px; font-size: 0.68rem; font-weight: 600;
+      padding: 1px 7px; border-radius: 999px;
+      background: rgba(99,102,241,0.12); color: #4f46e5;
+      border: 1.5px solid rgba(99,102,241,0.4);
+    }
+    .club-member-row input[type="checkbox"] {
+      width: 22px; height: 22px; accent-color: var(--primary); flex-shrink: 0;
+    }
+    .club-section-title {
+      font-size: 0.75rem; font-weight: 600; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 0.04em; margin: 16px 0 8px;
+    }
+    .club-form-group-btn {
+      margin-top: 12px; margin-bottom: 8px;
+    }
+    .group-detail-total {
+      position: sticky; bottom: 0; background: var(--card);
+      border-top: 1px solid var(--border); padding: 12px 0 4px;
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between;
+    }
+
     /* Duration chips */
     .chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
     .chip {
@@ -758,6 +834,15 @@
       <div id="clientsList"></div>
     </div>
 
+
+    <div id="section-club" class="section" data-screen="club">
+      <div class="club-summary" id="clubSummary"></div>
+      <div id="clubGroupsList"></div>
+      <div class="club-section-title">Члены клуба</div>
+      <div id="clubMembersList"></div>
+      <button type="button" class="btn btn-primary btn-block club-form-group-btn" data-action="club-group-create">Сформировать группу</button>
+    </div>
+
     <div id="section-settings" class="section" data-screen="settings">
       <div class="card auth-card">
         <div class="avatar-big" id="profileAvatar">?</div>
@@ -825,6 +910,7 @@
   <nav class="bottom-nav" id="bottomNav">
     <button type="button" class="nav-item active" data-tab="schedule"><span class="nav-icon">📅</span>Расписание</button>
     <button type="button" class="nav-item" data-tab="clients"><span class="nav-icon">👥</span>Клиенты</button>
+    <button type="button" class="nav-item" data-tab="club"><span class="nav-icon">🏆</span>Клуб</button>
     <button type="button" class="nav-item" data-tab="settings"><span class="nav-icon">⚙️</span>Настройки</button>
   </nav>
 
@@ -925,6 +1011,85 @@
         <button type="button" class="btn btn-secondary btn-block" data-action="class-edit-current">✏️ Изменить</button>
         <button type="button" class="btn btn-primary btn-block" data-close="classDetailModal">Готово</button>
       </div>
+      <button type="button" class="btn btn-danger btn-block mt-2" data-action="class-delete">🗑 Удалить занятие</button>
+    </div>
+  </div>
+
+
+  <div class="modal-overlay" id="clubMemberModal">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title" id="clubMemberModalTitle">Член клуба</div>
+        <button type="button" class="modal-close" data-close="clubMemberModal">×</button>
+      </div>
+      <form id="clubMemberForm">
+        <input type="hidden" id="clubMemberId">
+        <div class="form-group"><label>Имя *</label><input type="text" id="clubMemberName" required placeholder="Иван Иванов"></div>
+        <div class="form-group"><label>Телефон</label><input type="tel" id="clubMemberPhone" placeholder="+7 ..."></div>
+        <div class="form-group"><label>Заметки</label><textarea id="clubMemberNotes" rows="2" placeholder="..."></textarea></div>
+        <div class="flex gap-2 mt-3">
+          <button type="button" class="btn btn-secondary btn-block" data-close="clubMemberModal">Отмена</button>
+          <button type="submit" class="btn btn-primary btn-block">Сохранить</button>
+        </div>
+        <button type="button" class="btn btn-danger btn-block mt-2 hidden" id="btnDeleteClubMember" data-action="club-member-delete">Удалить</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="clubGroupModal">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title" id="clubGroupModalTitle">Новая группа</div>
+        <button type="button" class="modal-close" data-close="clubGroupModal">×</button>
+      </div>
+      <form id="clubGroupForm">
+        <input type="hidden" id="clubGroupId">
+        <div class="form-group"><label>Название группы *</label><input type="text" id="clubGroupName" required placeholder="Латина · вечер"></div>
+        <div class="form-group"><label>Членский взнос (₽) *</label><input type="number" id="clubGroupFee" required min="0" step="100" placeholder="3000" value="3000"></div>
+        <div class="form-group"><label>Комментарий</label><textarea id="clubGroupNotes" rows="2" placeholder="Зал, расписание..."></textarea></div>
+        <div class="form-group"><label>Участники</label><div class="client-select-list" id="clubGroupMemberSelect"></div></div>
+        <div class="flex gap-2 mt-3">
+          <button type="button" class="btn btn-secondary btn-block" data-close="clubGroupModal">Отмена</button>
+          <button type="submit" class="btn btn-primary btn-block">Сохранить</button>
+        </div>
+        <button type="button" class="btn btn-danger btn-block mt-2 hidden" id="btnDeleteClubGroup" data-action="club-group-delete">Удалить группу</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="clubGroupDetailModal">
+    <div class="modal" style="max-height:96vh;">
+      <div class="modal-header">
+        <div class="modal-title" id="clubGroupDetailTitle">Группа</div>
+        <button type="button" class="modal-close" data-close="clubGroupDetailModal">×</button>
+      </div>
+      <div id="clubGroupDetailContent"></div>
+      <div class="flex gap-2 mt-3">
+        <button type="button" class="btn btn-secondary btn-block" data-action="club-group-edit-current">✏️ Изменить</button>
+        <button type="button" class="btn btn-primary btn-block" data-close="clubGroupDetailModal">Готово</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="clubDiscountModal">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">Скидка</div>
+        <button type="button" class="modal-close" data-close="clubDiscountModal">×</button>
+      </div>
+      <p class="text-sm text-muted mb-2" id="clubDiscountMemberName"></p>
+      <input type="hidden" id="clubDiscountMemberId">
+      <div class="chip-row" id="discountChips">
+        <button type="button" class="chip" data-action="club-discount-set" data-amount="0">Без скидки</button>
+        <button type="button" class="chip" data-action="club-discount-set" data-amount="500">500 ₽</button>
+        <button type="button" class="chip" data-action="club-discount-set" data-amount="1000">1000 ₽</button>
+        <button type="button" class="chip" data-action="club-discount-set" data-amount="1500">1500 ₽</button>
+      </div>
+      <div class="form-group mt-3">
+        <label>Своя сумма (₽)</label>
+        <input type="number" id="clubDiscountCustom" min="0" step="50" placeholder="Например 700">
+      </div>
+      <button type="button" class="btn btn-primary btn-block" data-action="club-discount-custom">Применить</button>
     </div>
   </div>
 
@@ -1017,11 +1182,14 @@
   const State = {
     clients: [],
     classes: [],
+    clubMembers: [],
+    clubGroups: [],
     settings: Object.assign({}, CONFIG.DEFAULT_SETTINGS),
     currentUser: null, // { id, name, login, yandexId? }
     currentWeekStart: null,
     selectedDate: null,
     currentDetailClassId: null,
+    currentDetailGroupId: null,
     dataKey() {
       return this.currentUser ? CONFIG.STORAGE_KEY + '_' + this.currentUser.id : CONFIG.STORAGE_KEY;
     },
@@ -1030,6 +1198,8 @@
       Storage.saveKey(this.dataKey(), {
         clients: this.clients,
         classes: this.classes,
+        clubMembers: this.clubMembers,
+        clubGroups: this.clubGroups,
         settings: this.settings
       });
       try { if (typeof Cloud !== 'undefined') Cloud.schedulePush(); } catch (e) {}
@@ -1038,11 +1208,15 @@
       if (!data) {
         this.clients = [];
         this.classes = [];
+        this.clubMembers = [];
+        this.clubGroups = [];
         this.settings = Object.assign({}, CONFIG.DEFAULT_SETTINGS);
         return;
       }
       this.clients = data.clients || [];
       this.classes = data.classes || [];
+      this.clubMembers = data.clubMembers || [];
+      this.clubGroups = data.clubGroups || [];
       this.settings = Object.assign({}, CONFIG.DEFAULT_SETTINGS, data.settings || {});
     }
   };
@@ -1547,6 +1721,8 @@
         var payload = {
           clients: State.clients,
           classes: State.classes,
+          clubMembers: State.clubMembers,
+          clubGroups: State.clubGroups,
           settings: State.settings,
           updatedAt: new Date().toISOString(),
           userId: State.currentUser && State.currentUser.id
@@ -1598,6 +1774,8 @@
       // Берём облачную копию как источник истины (кросс-девайс)
       if (Array.isArray(remote.clients)) State.clients = remote.clients;
       if (Array.isArray(remote.classes)) State.classes = remote.classes;
+      if (Array.isArray(remote.clubMembers)) State.clubMembers = remote.clubMembers;
+      if (Array.isArray(remote.clubGroups)) State.clubGroups = remote.clubGroups;
       if (remote.settings && typeof remote.settings === 'object') {
         State.settings = Object.assign({}, CONFIG.DEFAULT_SETTINGS, remote.settings);
       }
@@ -1887,7 +2065,11 @@
       };
     },
     exportJson() {
-      return JSON.stringify({ clients: State.clients, classes: State.classes, settings: State.settings }, null, 2);
+      return JSON.stringify({
+        clients: State.clients, classes: State.classes,
+        clubMembers: State.clubMembers, clubGroups: State.clubGroups,
+        settings: State.settings
+      }, null, 2);
     },
     importJson(raw) {
       var data = JSON.parse(raw);
@@ -1907,9 +2089,137 @@
           return c && typeof c === 'object' && c.id && c.date && c.time;
         });
       }
+      if (Array.isArray(data.clubMembers)) {
+        State.clubMembers = data.clubMembers.filter(function (c) {
+          return c && typeof c === 'object' && c.id && c.name;
+        });
+      }
+      if (Array.isArray(data.clubGroups)) {
+        State.clubGroups = data.clubGroups.filter(function (g) {
+          return g && typeof g === 'object' && g.id && g.name;
+        });
+      }
       if (data.settings) State.settings = Object.assign({}, CONFIG.DEFAULT_SETTINGS, data.settings);
       try { Services.syncAllGroupClasses(); } catch (e) { console.error(e); }
       State.persist();
+    },
+
+    /* —— Клуб —— */
+    createClubMember(data) {
+      var m = {
+        id: Domain.uid(),
+        name: (data.name || '').trim(),
+        phone: (data.phone || '').trim(),
+        notes: (data.notes || '').trim(),
+        discount: 0,
+        createdAt: new Date().toISOString()
+      };
+      State.clubMembers.push(m);
+      State.persist();
+      return m;
+    },
+    updateClubMember(id, data) {
+      var m = State.clubMembers.find(function (x) { return x.id === id; });
+      if (!m) return null;
+      if (data.name !== undefined) m.name = String(data.name).trim();
+      if (data.phone !== undefined) m.phone = String(data.phone).trim();
+      if (data.notes !== undefined) m.notes = String(data.notes).trim();
+      if (data.discount !== undefined) m.discount = Math.max(0, parseInt(data.discount, 10) || 0);
+      State.persist();
+      return m;
+    },
+    deleteClubMember(id) {
+      State.clubMembers = State.clubMembers.filter(function (m) { return m.id !== id; });
+      State.clubGroups.forEach(function (g) {
+        g.memberIds = (g.memberIds || []).filter(function (mid) { return mid !== id; });
+        if (g.payments) delete g.payments[id];
+      });
+      State.persist();
+    },
+    setClubMemberDiscount(id, amount) {
+      return Services.updateClubMember(id, { discount: amount });
+    },
+    createClubGroup(data) {
+      var payments = {};
+      (data.memberIds || []).forEach(function (id) { payments[id] = false; });
+      var g = {
+        id: Domain.uid(),
+        name: (data.name || '').trim(),
+        notes: (data.notes || '').trim(),
+        fee: Math.max(0, parseInt(data.fee, 10) || 0),
+        memberIds: (data.memberIds || []).slice(),
+        payments: payments,
+        createdAt: new Date().toISOString()
+      };
+      State.clubGroups.push(g);
+      State.persist();
+      return g;
+    },
+    updateClubGroup(id, data) {
+      var g = State.clubGroups.find(function (x) { return x.id === id; });
+      if (!g) return null;
+      var prevPay = g.payments || {};
+      g.name = (data.name || '').trim();
+      g.notes = (data.notes || '').trim();
+      g.fee = Math.max(0, parseInt(data.fee, 10) || 0);
+      g.memberIds = (data.memberIds || []).slice();
+      var payments = {};
+      g.memberIds.forEach(function (mid) {
+        payments[mid] = !!(prevPay[mid]);
+      });
+      g.payments = payments;
+      State.persist();
+      return g;
+    },
+    deleteClubGroup(id) {
+      State.clubGroups = State.clubGroups.filter(function (g) { return g.id !== id; });
+      State.persist();
+    },
+    setClubGroupPayment(groupId, memberId, paid) {
+      var g = State.clubGroups.find(function (x) { return x.id === groupId; });
+      if (!g) return;
+      if (!g.payments) g.payments = {};
+      g.payments[memberId] = !!paid;
+      State.persist();
+    },
+    /** Сумма к оплате участника в группе с учётом скидки */
+    clubMemberDue(group, member) {
+      var fee = (group && group.fee) || 0;
+      var disc = (member && member.discount) || 0;
+      return Math.max(0, fee - disc);
+    },
+    clubGroupStats(group) {
+      var members = (group.memberIds || []).map(function (id) {
+        return State.clubMembers.find(function (m) { return m.id === id; });
+      }).filter(Boolean);
+      var paid = 0, totalMoney = 0, collected = 0;
+      members.forEach(function (m) {
+        var due = Services.clubMemberDue(group, m);
+        totalMoney += due;
+        if (group.payments && group.payments[m.id]) {
+          paid++;
+          collected += due;
+        }
+      });
+      return { count: members.length, paid: paid, totalMoney: totalMoney, collected: collected };
+    },
+    clubOverallStats() {
+      var paid = 0, count = 0, collected = 0, totalMoney = 0;
+      State.clubGroups.forEach(function (g) {
+        var s = Services.clubGroupStats(g);
+        paid += s.paid;
+        count += s.count;
+        collected += s.collected;
+        totalMoney += s.totalMoney;
+      });
+      return {
+        groups: State.clubGroups.length,
+        members: State.clubMembers.length,
+        paid: paid,
+        count: count,
+        collected: collected,
+        totalMoney: totalMoney
+      };
     }
   };
 
@@ -1956,7 +2266,7 @@
       for (var h = 0; h < 24; h++) {
         hHtml += '<div class="time-picker-item" data-h="' + h + '">' + String(h).padStart(2, '0') + '</div>';
       }
-      for (var m = 0; m < 60; m++) {
+      for (var m = 0; m < 60; m += 15) {
         mHtml += '<div class="time-picker-item" data-m="' + m + '">' + String(m).padStart(2, '0') + '</div>';
       }
       for (var p2 = 0; p2 < 2; p2++) {
@@ -2015,6 +2325,9 @@
       var parts = (timeStr || '18:00').split(':');
       var hh = Math.max(0, Math.min(23, parseInt(parts[0], 10) || 0));
       var mm = Math.max(0, Math.min(59, parseInt(parts[1], 10) || 0));
+      // шаг 15 минут
+      mm = Math.round(mm / 15) * 15;
+      if (mm >= 60) { mm = 0; hh = Math.min(23, hh + 1); }
       this.$('classTime').value = String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0');
       var hoursEl = this.$('timePickerHours');
       var minsEl = this.$('timePickerMinutes');
@@ -2077,6 +2390,7 @@
       if (fab) fab.classList.toggle('hidden', tab === 'settings');
       if (tab === 'clients') this.renderClients();
       if (tab === 'schedule') this.renderSchedule();
+      if (tab === 'club') this.renderClub();
       if (tab === 'settings') {
         this.applyTheme();
         this.updateContactsStatus();
@@ -2350,6 +2664,156 @@
         }).join('');
       }
       this.$('classDetailContent').innerHTML = html;
+    },
+    formatMoney(n) {
+      return (Math.round(n) || 0).toLocaleString('ru-RU') + ' ₽';
+    },
+    renderClub() {
+      var sum = Services.clubOverallStats();
+      var sumEl = this.$('clubSummary');
+      if (sumEl) {
+        var bubbleCls = sum.count === 0 ? 'empty' : (sum.paid === sum.count ? '' : 'partial');
+        if (sum.paid === 0 && sum.count > 0) bubbleCls = 'empty';
+        sumEl.innerHTML =
+          '<div class="club-summary-chip"><div class="val">' + sum.groups + '</div><div class="lbl">Групп</div></div>' +
+          '<div class="club-summary-chip"><div class="val">' + sum.members + '</div><div class="lbl">Членов</div></div>' +
+          '<div class="club-summary-chip"><div class="val">' + sum.paid + '/' + sum.count + '</div><div class="lbl">Оплатили взносы</div></div>' +
+          '<div class="club-summary-chip"><div class="val" style="font-size:1rem;">' + this.formatMoney(sum.collected) + '</div><div class="lbl">Собрано</div></div>';
+      }
+
+      var groupsEl = this.$('clubGroupsList');
+      if (groupsEl) {
+        if (!State.clubGroups.length) {
+          groupsEl.innerHTML = '<div class="text-sm text-muted" style="padding:8px 0;">Пока нет групп — нажмите «Сформировать группу»</div>';
+        } else {
+          groupsEl.innerHTML = State.clubGroups.map(function (g) {
+            var st = Services.clubGroupStats(g);
+            var bcls = st.count === 0 ? 'empty' : (st.paid === st.count ? '' : (st.paid === 0 ? 'empty' : 'partial'));
+            return '<div class="club-group-card" data-action="club-group-open" data-id="' + g.id + '">' +
+              '<div class="club-group-title">' + Domain.escapeHtml(g.name) + '</div>' +
+              '<div class="club-group-meta">' +
+                '<span>' + st.paid + '/' + st.count + ' оплатили</span>' +
+                '<span>взнос ' + UI.formatMoney(g.fee) + '</span>' +
+                '<span class="club-money-bubble ' + bcls + '">' + UI.formatMoney(st.collected) + '</span>' +
+              '</div>' +
+              (g.notes ? '<div class="text-sm text-muted" style="margin-top:6px;">📝 ' + Domain.escapeHtml(g.notes) + '</div>' : '') +
+            '</div>';
+          }).join('');
+        }
+      }
+
+      var listEl = this.$('clubMembersList');
+      if (listEl) {
+        var sorted = State.clubMembers.slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); });
+        if (!sorted.length) {
+          listEl.innerHTML = '<div class="empty"><div class="empty-icon">🏆</div><div>Нет членов клуба — нажмите «+»</div></div>';
+        } else {
+          listEl.innerHTML = sorted.map(function (m, i) {
+            var disc = m.discount > 0 ? '<span class="club-discount-badge">−' + UI.formatMoney(m.discount) + '</span>' : '';
+            return '<div class="club-member-row" data-action="club-member-open" data-id="' + m.id + '">' +
+              '<div class="club-member-num">' + (i + 1) + '</div>' +
+              '<div class="club-member-info">' +
+                '<div class="club-member-name">' + Domain.escapeHtml(m.name) + disc + '</div>' +
+                (m.phone ? '<div class="client-phone">' + Domain.escapeHtml(m.phone) + '</div>' : '') +
+              '</div></div>';
+          }).join('');
+        }
+      }
+    },
+    fillClubMemberForm(member) {
+      this.$('clubMemberForm').reset();
+      this.$('clubMemberId').value = '';
+      this.$('btnDeleteClubMember').classList.add('hidden');
+      if (member) {
+        this.$('clubMemberModalTitle').textContent = 'Член клуба';
+        this.$('clubMemberId').value = member.id;
+        this.$('clubMemberName').value = member.name || '';
+        this.$('clubMemberPhone').value = member.phone || '';
+        this.$('clubMemberNotes').value = member.notes || '';
+        this.$('btnDeleteClubMember').classList.remove('hidden');
+      } else {
+        this.$('clubMemberModalTitle').textContent = 'Новый член клуба';
+      }
+    },
+    fillClubGroupForm(group) {
+      this.$('clubGroupForm').reset();
+      this.$('clubGroupId').value = '';
+      this.$('btnDeleteClubGroup').classList.add('hidden');
+      this.$('clubGroupFee').value = '3000';
+      var selected = [];
+      if (group) {
+        this.$('clubGroupModalTitle').textContent = 'Редактировать группу';
+        this.$('clubGroupId').value = group.id;
+        this.$('clubGroupName').value = group.name || '';
+        this.$('clubGroupFee').value = group.fee != null ? group.fee : 3000;
+        this.$('clubGroupNotes').value = group.notes || '';
+        selected = group.memberIds || [];
+        this.$('btnDeleteClubGroup').classList.remove('hidden');
+      } else {
+        this.$('clubGroupModalTitle').textContent = 'Новая группа';
+      }
+      this.renderClubGroupMemberSelect(selected);
+    },
+    renderClubGroupMemberSelect(selectedIds) {
+      var box = this.$('clubGroupMemberSelect');
+      if (!box) return;
+      var sorted = State.clubMembers.slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); });
+      if (!sorted.length) {
+        box.innerHTML = '<div class="text-sm text-muted" style="padding:12px">Сначала добавьте членов клуба</div>';
+        return;
+      }
+      selectedIds = selectedIds || [];
+      box.innerHTML = sorted.map(function (m) {
+        var disc = m.discount > 0 ? ' <span class="club-discount-badge">−' + UI.formatMoney(m.discount) + '</span>' : '';
+        return '<label class="client-select-item">' +
+          '<input type="checkbox" value="' + m.id + '" ' + (selectedIds.indexOf(m.id) >= 0 ? 'checked' : '') + '>' +
+          '<span class="client-select-meta"><span class="client-select-name">' + Domain.escapeHtml(m.name) + disc + '</span>' +
+          (m.phone ? '<span class="client-select-phone">' + Domain.escapeHtml(m.phone) + '</span>' : '') +
+          '</span></label>';
+      }).join('');
+    },
+    renderClubGroupDetail(group) {
+      if (!group) return;
+      this.$('clubGroupDetailTitle').textContent = group.name || 'Группа';
+      var members = (group.memberIds || []).map(function (id) {
+        return State.clubMembers.find(function (m) { return m.id === id; });
+      }).filter(Boolean).sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); });
+      var st = Services.clubGroupStats(group);
+      var bcls = st.count === 0 ? 'empty' : (st.paid === st.count ? '' : (st.paid === 0 ? 'empty' : 'partial'));
+
+      var html = '<div class="card" style="margin-bottom:12px;background:var(--primary-light);border-color:transparent;">' +
+        '<div style="font-weight:700;font-size:1.1rem;">' + Domain.escapeHtml(group.name) + '</div>' +
+        '<div class="text-sm" style="margin-top:4px;">Взнос: <strong>' + this.formatMoney(group.fee) + '</strong></div>' +
+        (group.notes ? '<div class="text-sm mt-2">📝 ' + Domain.escapeHtml(group.notes) + '</div>' : '') +
+        '</div>';
+
+      if (!members.length) {
+        html += '<div class="empty" style="padding:20px;">Нет участников</div>';
+      } else {
+        html += members.map(function (m, i) {
+          var paid = !!(group.payments && group.payments[m.id]);
+          var due = Services.clubMemberDue(group, m);
+          var disc = m.discount > 0 ? '<span class="club-discount-badge">−' + UI.formatMoney(m.discount) + '</span>' : '';
+          return '<div class="club-member-row ' + (paid ? 'paid' : 'unpaid') + '">' +
+            '<div class="club-member-num">' + (i + 1) + '</div>' +
+            '<div class="club-member-info" data-action="club-discount-open" data-id="' + m.id + '">' +
+              '<div class="club-member-name" style="color:' + (paid ? '#047857' : '#b91c1c') + ';">' +
+                Domain.escapeHtml(m.name) + disc +
+              '</div>' +
+              '<div class="client-phone">к оплате ' + UI.formatMoney(due) + '</div>' +
+            '</div>' +
+            '<input type="checkbox" ' + (paid ? 'checked' : '') +
+              ' data-action="club-toggle-pay" data-group="' + group.id + '" data-member="' + m.id + '">' +
+          '</div>';
+        }).join('');
+      }
+
+      html += '<div class="group-detail-total">' +
+        '<div style="font-weight:600;">' + st.paid + ' / ' + st.count + ' оплатили</div>' +
+        '<span class="club-money-bubble ' + bcls + '">' + this.formatMoney(st.collected) + ' из ' + this.formatMoney(st.totalMoney) + '</span>' +
+        '</div>';
+
+      this.$('clubGroupDetailContent').innerHTML = html;
     }
   };
 
@@ -2587,13 +3051,113 @@
       UI.renderSchedule();
     },
     deleteClass() {
-      var id = UI.$('classId').value;
+      var id = UI.$('classId').value || State.currentDetailClassId;
       if (!id || !confirm('Удалить занятие?')) return;
       Services.deleteClass(id);
+      State.currentDetailClassId = null;
       UI.closeModal('classModal');
       UI.closeModal('classDetailModal');
       UI.renderSchedule();
       UI.showToast('Удалено');
+    },
+    openClubMemberModal(id) {
+      var m = id ? State.clubMembers.find(function (x) { return x.id === id; }) : null;
+      UI.fillClubMemberForm(m || null);
+      UI.openModal('clubMemberModal');
+    },
+    saveClubMember(e) {
+      e.preventDefault();
+      var id = UI.$('clubMemberId').value;
+      var payload = {
+        name: UI.$('clubMemberName').value,
+        phone: UI.$('clubMemberPhone').value,
+        notes: UI.$('clubMemberNotes').value
+      };
+      if (!payload.name.trim()) { UI.showToast('Укажите имя'); return; }
+      if (id) { Services.updateClubMember(id, payload); UI.showToast('Сохранено'); }
+      else { Services.createClubMember(payload); UI.showToast('Член клуба добавлен'); }
+      UI.closeModal('clubMemberModal');
+      UI.renderClub();
+    },
+    deleteClubMember() {
+      var id = UI.$('clubMemberId').value;
+      if (!id || !confirm('Удалить члена клуба?')) return;
+      Services.deleteClubMember(id);
+      UI.closeModal('clubMemberModal');
+      UI.renderClub();
+      UI.showToast('Удалено');
+    },
+    openClubGroupModal(id) {
+      var g = id ? State.clubGroups.find(function (x) { return x.id === id; }) : null;
+      UI.fillClubGroupForm(g || null);
+      UI.openModal('clubGroupModal');
+    },
+    saveClubGroup(e) {
+      e.preventDefault();
+      var id = UI.$('clubGroupId').value;
+      var memberIds = [];
+      document.querySelectorAll('#clubGroupMemberSelect input[type=checkbox]:checked').forEach(function (cb) {
+        memberIds.push(cb.value);
+      });
+      var payload = {
+        name: UI.$('clubGroupName').value,
+        fee: UI.$('clubGroupFee').value,
+        notes: UI.$('clubGroupNotes').value,
+        memberIds: memberIds
+      };
+      if (!payload.name.trim()) { UI.showToast('Укажите название'); return; }
+      if (id) { Services.updateClubGroup(id, payload); UI.showToast('Группа обновлена'); }
+      else { Services.createClubGroup(payload); UI.showToast('Группа создана'); }
+      UI.closeModal('clubGroupModal');
+      UI.renderClub();
+      if (State.currentDetailGroupId) {
+        var g2 = State.clubGroups.find(function (x) { return x.id === State.currentDetailGroupId; });
+        if (g2) UI.renderClubGroupDetail(g2);
+      }
+    },
+    deleteClubGroup() {
+      var id = UI.$('clubGroupId').value || State.currentDetailGroupId;
+      if (!id || !confirm('Удалить группу?')) return;
+      Services.deleteClubGroup(id);
+      State.currentDetailGroupId = null;
+      UI.closeModal('clubGroupModal');
+      UI.closeModal('clubGroupDetailModal');
+      UI.renderClub();
+      UI.showToast('Группа удалена');
+    },
+    openClubGroupDetail(id) {
+      var g = State.clubGroups.find(function (x) { return x.id === id; });
+      if (!g) return;
+      State.currentDetailGroupId = id;
+      UI.renderClubGroupDetail(g);
+      UI.openModal('clubGroupDetailModal');
+    },
+    toggleClubPayment(groupId, memberId, paid) {
+      Services.setClubGroupPayment(groupId, memberId, paid);
+      var g = State.clubGroups.find(function (x) { return x.id === groupId; });
+      if (g) UI.renderClubGroupDetail(g);
+      UI.renderClub();
+      UI.showToast(paid ? 'Взнос отмечен' : 'Отметка снята');
+    },
+    openDiscountModal(memberId) {
+      var m = State.clubMembers.find(function (x) { return x.id === memberId; });
+      if (!m) return;
+      UI.$('clubDiscountMemberId').value = m.id;
+      UI.$('clubDiscountMemberName').textContent = m.name + (m.discount ? ' (сейчас −' + m.discount + ' ₽)' : '');
+      UI.$('clubDiscountCustom').value = m.discount || '';
+      UI.openModal('clubDiscountModal');
+    },
+    applyDiscount(amount) {
+      var id = UI.$('clubDiscountMemberId').value;
+      if (!id) return;
+      Services.setClubMemberDiscount(id, amount);
+      UI.closeModal('clubDiscountModal');
+      UI.renderClub();
+      if (State.currentDetailGroupId) {
+        var g = State.clubGroups.find(function (x) { return x.id === State.currentDetailGroupId; });
+        if (g) UI.renderClubGroupDetail(g);
+      }
+      UI.showToast(amount ? ('Скидка ' + amount + ' ₽') : 'Скидка снята');
     },
     openClassDetail(id) {
       var cls = State.classes.find(function (x) { return x.id === id; });
@@ -2724,7 +3288,32 @@
           var activeTab = document.querySelector('.nav-item.active');
           var tab = activeTab ? activeTab.dataset.tab : 'schedule';
           if (tab === 'clients') Controllers.openClientModal(null);
+          else if (tab === 'club') Controllers.openClubMemberModal(null);
           else Controllers.openClassModal(null);
+          break;
+        }
+        case 'club-member-open': Controllers.openClubMemberModal(el.dataset.id); break;
+        case 'club-member-delete': Controllers.deleteClubMember(); break;
+        case 'club-group-create': Controllers.openClubGroupModal(null); break;
+        case 'club-group-open': Controllers.openClubGroupDetail(el.dataset.id); break;
+        case 'club-group-edit-current':
+          UI.closeModal('clubGroupDetailModal');
+          Controllers.openClubGroupModal(State.currentDetailGroupId);
+          break;
+        case 'club-group-delete': Controllers.deleteClubGroup(); break;
+        case 'club-toggle-pay':
+          Controllers.toggleClubPayment(el.dataset.group, el.dataset.member, el.checked);
+          break;
+        case 'club-discount-open':
+          Controllers.openDiscountModal(el.dataset.id);
+          break;
+        case 'club-discount-set':
+          Controllers.applyDiscount(parseInt(el.dataset.amount, 10) || 0);
+          break;
+        case 'club-discount-custom': {
+          var custom = parseInt(UI.$('clubDiscountCustom').value, 10);
+          if (isNaN(custom) || custom < 0) { UI.showToast('Введите сумму'); break; }
+          Controllers.applyDiscount(custom);
           break;
         }
         case 'abon-add': {
@@ -2850,6 +3439,10 @@
 
     UI.$('clientForm').addEventListener('submit', function (e) { Controllers.saveClient(e); });
     UI.$('classForm').addEventListener('submit', function (e) { Controllers.saveClass(e); });
+    var clubMemberForm = UI.$('clubMemberForm');
+    if (clubMemberForm) clubMemberForm.addEventListener('submit', function (e) { Controllers.saveClubMember(e); });
+    var clubGroupForm = UI.$('clubGroupForm');
+    if (clubGroupForm) clubGroupForm.addEventListener('submit', function (e) { Controllers.saveClubGroup(e); });
     var classTitleEl = UI.$('classTitle');
     if (classTitleEl) {
       classTitleEl.addEventListener('input', function () {
