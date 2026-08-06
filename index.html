@@ -1,0 +1,4116 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#e11d48">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+  <link rel="manifest" id="appManifestLink">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E💃%3C/text%3E%3C/svg%3E">
+  <title>Танцевальный тренер</title>
+  <!--
+    ============================================================
+    АРХИТЕКТУРА ПРИЛОЖЕНИЯ (для разработчиков)
+    ============================================================
+
+    Один HTML-файл = SPA без сборки. Логика разделена на слои:
+
+    1. CONFIG      — константы, ключи хранилища, пресеты
+    2. Storage     — безопасная работа с localStorage / fallback
+    3. State       — единый объект состояния приложения
+    4. Domain      — чистые функции предметной области
+                     (даты, пересечения времени, статусы оплаты)
+    5. Services    — операции над данными (CRUD клиентов/занятий)
+    6. UI          — рендер DOM, модалки, тосты, темы
+    7. Controllers — обработчики событий (связь UI ↔ Services)
+    8. Bootstrap   — старт: load → apply theme → первый render
+
+    Как добавить фичу:
+    - Новое поле у клиента/занятия  → Storage schema + form + render
+    - Новый экран                   → section в HTML + tab + render*
+    - Новая бизнес-логика           → Domain или Services
+    - Не пишите логику прямо в onclick — используйте data-action
+
+    Данные: localStorage ключ CONFIG.STORAGE_KEY
+    Схема: { clients[], classes[], settings{} }
+
+    Отладка в консоли: window.DanceTrainer
+    ============================================================
+  -->
+  <style>
+    :root {
+      --primary: #e11d48;
+      --primary-dark: #be123c;
+      --primary-light: #ffe4e6;
+      --success: #10b981;
+      --danger: #ef4444;
+      --bg: #fdf2f4;
+      --card: #ffffff;
+      --text: #1c1917;
+      --text-muted: #a8a29e;
+      --border: #f5e6e8;
+      --shadow: 0 1px 2px rgba(28,25,23,0.04);
+      --radius: 16px;
+      --nav-h: 64px;
+      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    }
+
+    [data-theme="dark"] {
+      --bg: #1c1917;
+      --card: #292524;
+      --text: #fafaf9;
+      --text-muted: #a8a29e;
+      --border: #44403c;
+      --primary-light: #4c0519;
+      --shadow: 0 1px 2px rgba(0,0,0,0.25);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+      min-height: 100vh;
+      padding-bottom: calc(var(--nav-h) + 16px);
+      font-size: 14px;
+      /* WebView в APK самовольно раздувает шрифты («font boosting»),
+         из-за чего вёрстка едет. Отключаем. */
+      -webkit-text-size-adjust: 100%;
+      text-size-adjust: 100%;
+      letter-spacing: -0.01em;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .header {
+      background: var(--card);
+      color: var(--text);
+      /* верхний отступ = высота статус-бара + 12px.
+         На устройствах без выреза env(...) вернёт 0 и всё останется как было. */
+      padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px 10px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      border-bottom: 1px solid var(--border);
+    }
+    /* Боковые вырезы (ландшафт, изогнутые экраны) */
+    .header {
+      padding-left: max(env(safe-area-inset-left, 0px), 16px);
+      padding-right: max(env(safe-area-inset-right, 0px), 16px);
+    }
+    .header h1 {
+      font-size: 1rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .header-sub {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+      font-weight: 400;
+    }
+
+    .bottom-nav {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      height: var(--nav-h);
+      background: var(--card);
+      border-top: 1px solid var(--border);
+      display: flex;
+      z-index: 100;
+      padding-bottom: env(safe-area-inset-bottom, 0);
+    }
+    .nav-item {
+      flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 3px; border: none; background: none; color: var(--text-muted);
+      font-size: 0.68rem; font-weight: 500; cursor: pointer; padding: 8px;
+      letter-spacing: 0;
+    }
+    .nav-item.active { color: var(--primary); }
+    .nav-icon { font-size: 1.25rem; line-height: 1; }
+
+    .content { padding: 12px; max-width: 520px; margin: 0 auto; }
+    .section { display: none; }
+    .section.active { display: block; }
+
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 16px;
+      margin-bottom: 10px;
+      border: 1px solid var(--border);
+    }
+
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 11px 16px; border-radius: 12px; font-weight: 500; font-size: 0.875rem;
+      border: none; cursor: pointer; transition: opacity 0.15s, transform 0.1s;
+      letter-spacing: -0.01em;
+    }
+    .btn:active { transform: scale(0.98); opacity: 0.9; }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-secondary { background: var(--primary-light); color: var(--primary); }
+    .btn-danger { background: #fef2f2; color: #dc2626; }
+    .btn-ghost { background: transparent; color: var(--text-muted); padding: 8px 10px; }
+    .btn-sm { padding: 8px 12px; font-size: 0.8rem; }
+    .btn-block { width: 100%; }
+
+    .fab {
+      position: fixed; bottom: calc(var(--nav-h) + 16px); right: 20px;
+      width: 52px; height: 52px; border-radius: 50%;
+      background: var(--primary); color: white; border: none; font-size: 24px;
+      box-shadow: 0 4px 16px color-mix(in srgb, var(--primary) 35%, transparent);
+      cursor: pointer; z-index: 80;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .fab.hidden { display: none; }
+
+    .form-group { margin-bottom: 16px; }
+    .form-group label {
+      display: block; font-size: 0.72rem; font-weight: 500;
+      margin-bottom: 6px; color: var(--text-muted); letter-spacing: 0.01em;
+      text-transform: none;
+    }
+    .form-group input, .form-group textarea, .form-group select {
+      width: 100%; padding: 12px 14px; border: 1px solid var(--border);
+      border-radius: 12px; font-size: 0.9375rem; background: var(--card); color: var(--text);
+      font-family: inherit; letter-spacing: -0.01em;
+    }
+    .form-group input:focus, .form-group textarea:focus, .form-group select:focus {
+      outline: none; border-color: var(--primary);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent);
+    }
+    /* Телефон введён не полностью (нужно 11 цифр) */
+    .form-group input.phone-incomplete {
+      border-color: #dc2626;
+      box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
+    }
+    .form-row { display: flex; gap: 12px; }
+    .form-row .form-group { flex: 1; }
+
+
+    /* —— Клуб —— */
+    .club-summary {
+      display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;
+    }
+    .club-summary-chip {
+      flex: 1; min-width: 120px; background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; padding: 12px; text-align: center;
+    }
+    .club-summary-chip .val { font-size: 1.15rem; font-weight: 700; color: var(--primary); letter-spacing: -0.02em; }
+    .club-summary-chip .lbl { font-size: 0.68rem; color: var(--text-muted); margin-top: 2px; }
+    .club-group-card {
+      background: var(--card); border: 1.5px solid var(--border); border-radius: 14px;
+      padding: 14px 16px; margin-bottom: 10px; cursor: pointer;
+      box-shadow: var(--shadow);
+    }
+    .club-group-card:active { transform: scale(0.99); }
+    .club-group-title { font-weight: 600; font-size: 0.95rem; margin-bottom: 4px; }
+    .club-money-bubble {
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      gap: 4px;
+      /* Высота прибита гвоздями: при «0 ₽» бабл не должен превращаться
+         в овал во всю карточку. !important — потому что в WebView
+         эти свойства перебивались. */
+      width: auto !important;
+      min-width: 72px !important;
+      height: 28px !important;
+      min-height: 28px !important;
+      max-height: 28px !important;
+      aspect-ratio: auto !important;
+      flex: 0 0 auto !important;
+      align-self: center !important;
+      padding: 0 12px !important;
+      border-radius: 14px !important;
+      font-size: 0.72rem;
+      font-weight: 600;
+      line-height: 28px !important;
+      white-space: nowrap !important;
+      overflow: hidden;
+      box-sizing: border-box !important;
+      vertical-align: middle;
+      -webkit-text-size-adjust: 100%;
+      text-size-adjust: 100%;
+      background: rgba(16,185,129,0.12); color: #059669;
+      border: 1.5px solid rgba(16,185,129,0.45);
+    }
+    .club-money-bubble.is-partial {
+      background: rgba(245,158,11,0.12); color: #c2410c;
+      border-color: rgba(245,158,11,0.5);
+    }
+    .club-money-bubble.is-zero {
+      background: rgba(239,68,68,0.1); color: #dc2626;
+      border-color: rgba(239,68,68,0.4);
+    }
+    .club-group-meta {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+      font-size: 0.75rem; color: var(--text-muted);
+    }
+    .club-group-card {
+      display: block;
+    }
+    .club-member-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px; border-radius: 12px; margin-bottom: 6px;
+      border: 1.5px solid var(--border); background: var(--card);
+    }
+    .club-member-row.paid {
+      background: rgba(16,185,129,0.08);
+      border-color: rgba(16,185,129,0.4);
+    }
+    .club-member-row.unpaid {
+      background: rgba(239,68,68,0.06);
+      border-color: rgba(239,68,68,0.35);
+    }
+    .club-member-num {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: var(--primary-light); color: var(--primary);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.75rem; font-weight: 700; flex-shrink: 0;
+    }
+    .club-member-info { flex: 1; min-width: 0; cursor: pointer; }
+    .club-member-name { font-weight: 500; font-size: 0.875rem; }
+    .club-discount-badge {
+      display: inline-block; margin-left: 6px; font-size: 0.68rem; font-weight: 600;
+      padding: 1px 7px; border-radius: 999px;
+      background: rgba(99,102,241,0.12); color: #4f46e5;
+      border: 1.5px solid rgba(99,102,241,0.4);
+    }
+    .club-member-row input[type="checkbox"] {
+      width: 22px; height: 22px; accent-color: var(--primary); flex-shrink: 0;
+    }
+    .club-section-title {
+      font-size: 0.75rem; font-weight: 600; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 0.04em; margin: 16px 0 8px;
+    }
+    .club-form-group-btn {
+      margin-top: 12px; margin-bottom: 8px;
+    }
+    .group-detail-total {
+      position: sticky; bottom: 0; background: var(--card);
+      border-top: 1px solid var(--border); padding: 12px 0 4px;
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between;
+    }
+
+    /* Duration chips */
+    .chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+    .chip {
+      padding: 8px 14px; border-radius: 999px; border: 1px solid var(--border);
+      background: var(--card); color: var(--text-muted); font-size: 0.8125rem;
+      font-weight: 500; cursor: pointer; font-family: inherit;
+    }
+    .chip.active {
+      background: var(--primary); color: white; border-color: var(--primary);
+    }
+    .chip-custom {
+      width: 72px; padding: 8px 10px; border-radius: 999px; border: 1px solid var(--border);
+      font-size: 0.8125rem; text-align: center; background: var(--card); color: var(--text);
+      font-family: inherit;
+    }
+
+    .client-avatar {
+      width: 40px; height: 40px; border-radius: 50%;
+      background: var(--primary-light); color: var(--primary);
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 600; font-size: 0.9375rem; flex-shrink: 0;
+    }
+    .client-item { display: flex; align-items: center; gap: 12px; }
+    .client-info { flex: 1; min-width: 0; }
+    .client-name { font-weight: 500; font-size: 0.9375rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .client-phone { font-size: 0.75rem; color: var(--text-muted); margin-top: 1px; }
+
+    .empty { text-align: center; padding: 48px 20px; color: var(--text-muted); font-size: 0.875rem; }
+    .empty-icon { font-size: 2rem; margin-bottom: 10px; opacity: 0.4; }
+
+    .week-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; gap: 8px; }
+    .week-nav-title { font-weight: 500; font-size: 0.875rem; text-align: center; flex: 1; color: var(--text); }
+
+    .week-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 12px; }
+    .day-btn {
+      display: flex; flex-direction: column; align-items: center;
+      padding: 6px 2px 5px; border-radius: 10px; border: 1px solid var(--border);
+      background: var(--card); cursor: pointer; box-shadow: none;
+    }
+    .day-btn .day-name { font-size: 0.65rem; color: var(--text-muted); font-weight: 500; }
+    .day-btn .day-num { font-size: 0.9375rem; font-weight: 600; margin-top: 2px; letter-spacing: -0.02em; }
+    .day-btn.active { background: var(--primary); color: white; }
+    .day-btn.active .day-name { color: rgba(255,255,255,0.75); }
+    .day-btn.has-classes::after {
+      content: ''; width: 4px; height: 4px; background: var(--primary);
+      border-radius: 50%; margin-top: 4px;
+    }
+    .day-btn.active.has-classes::after { background: white; }
+    .day-btn.today:not(.active) { box-shadow: 0 0 0 1.5px var(--primary); }
+
+    .time-grid {
+      border: 1px solid var(--border); border-radius: 12px;
+      background: var(--card); overflow: visible;
+      position: relative;
+    }
+    .time-slot {
+      display: flex; height: 96px;
+      border-bottom: 1px solid var(--border);
+      pointer-events: none;
+      position: relative;
+    }
+    .time-slot:last-child { border-bottom: none; }
+    .time-slot::after {
+      content: '';
+      position: absolute;
+      left: 42px; right: 0; top: 50%;
+      border-top: 1px dashed color-mix(in srgb, var(--border) 80%, transparent);
+      pointer-events: none;
+    }
+    .time-label {
+      width: 42px; flex-shrink: 0; padding: 6px 4px; font-size: 0.65rem; font-weight: 500;
+      color: var(--text-muted); text-align: right;
+      border-right: 1px solid var(--border);
+      background: color-mix(in srgb, var(--bg) 70%, var(--card));
+    }
+    .time-content { flex: 1; min-height: 96px; }
+
+    .time-events {
+      position: absolute;
+      left: 42px; right: 0; top: 0; bottom: 0;
+      pointer-events: none;
+    }
+    .time-class {
+      position: absolute;
+      left: 4px; right: 6px;
+      border: 1.5px solid color-mix(in srgb, var(--primary) 35%, var(--border));
+      border-left: 3px solid var(--primary);
+      border-radius: 10px;
+      padding: 6px 10px;
+      cursor: pointer;
+      background: #fff;
+      box-sizing: border-box;
+      overflow-x: hidden;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      pointer-events: auto;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-height: 0;
+      box-shadow: 0 1px 3px rgba(28,25,23,0.08);
+    }
+    .time-class-head {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; flex-shrink: 0;
+    }
+    .time-class-time { flex-shrink: 1; min-width: 0; }
+    .time-class-paid-count {
+      flex-shrink: 0; margin-top: 0; font-size: 0.7rem; font-weight: 600;
+      white-space: nowrap; padding: 1px 6px; border-radius: 999px;
+      background: rgba(0,0,0,0.04);
+    }
+    .time-class.paid-all .time-class-paid-count { background: #d1fae5; }
+    .time-class.has-unpaid .time-class-paid-count { background: #ffe4e6; }
+    .time-class-title { flex-shrink: 0; }
+    .time-class-notes {
+      flex-shrink: 0;
+      display: -webkit-box;
+      -webkit-line-clamp: 1;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+    }
+    .time-class.paid-all {
+      background: #ecfdf5;
+      border-color: #6ee7b7;
+      border-left-color: #10b981;
+    }
+    .time-class.has-unpaid {
+      background: #fff1f2;
+      border-color: #fda4af;
+      border-left-color: #e11d48;
+    }
+    .time-class.no-clients {
+      background: #fafaf9;
+      border-color: var(--border);
+      border-left-color: #a8a29e;
+    }
+    .time-class.club-group {
+      background: #eff6ff;
+      border-color: #93c5fd;
+      border-left-color: #2563eb;
+    }
+    .time-class.club-group .time-class-time { color: #1d4ed8; }
+    .time-class.club-group .time-class-paid-count {
+      background: #dbeafe; color: #1d4ed8;
+    }
+    [data-theme="dark"] .time-class.club-group {
+      background: #1e3a5f; border-color: #1e40af;
+    }
+    [data-theme="dark"] .time-class.club-group .time-class-time { color: #93c5fd; }
+    [data-theme="dark"] .time-class { background: var(--card); }
+    [data-theme="dark"] .time-class.paid-all { background: #064e3b; border-color: #065f46; }
+    [data-theme="dark"] .time-class.has-unpaid { background: #4c0519; border-color: #9f1239; }
+
+    .time-class-time { font-weight: 600; font-size: 0.875rem; letter-spacing: -0.02em; }
+    .time-class.paid-all .time-class-time { color: #059669; }
+    .time-class.has-unpaid .time-class-time { color: #e11d48; }
+    [data-theme="dark"] .time-class.paid-all .time-class-time { color: #34d399; }
+    [data-theme="dark"] .time-class.has-unpaid .time-class-time { color: #fb7185; }
+
+        .name-paid { color: #059669; font-weight: 500; }
+    .name-unpaid { color: var(--text-muted); }
+    [data-theme="dark"] .name-paid { color: #34d399; }
+
+    .time-class-notes {
+      font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;
+    }
+    .time-class-title { font-weight: 500; font-size: 0.8125rem; margin-bottom: 2px; color: var(--text); }
+    .time-class-paid-count { font-size: 0.7rem; font-weight: 600; }
+    .time-class.paid-all .time-class-paid-count { color: #059669; }
+    .time-class.has-unpaid .time-class-paid-count { color: #e11d48; }
+
+    /* Режим «Карточки»: список без пустой решётки */
+    [data-cal-style="cards"] .time-grid {
+      border: none;
+      background: transparent;
+      height: auto !important;
+      overflow: visible;
+    }
+    [data-cal-style="cards"] .time-slot { display: none !important; }
+    [data-cal-style="cards"] .time-events {
+      position: static !important;
+      left: auto; right: auto; top: auto; bottom: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: auto;
+    }
+    [data-cal-style="cards"] .time-class {
+      position: relative !important;
+      top: auto !important;
+      left: auto !important;
+      right: auto !important;
+      height: auto !important;
+      min-height: 0;
+      margin: 0;
+      padding: 14px 16px;
+      border-radius: 16px;
+      overflow: visible;
+      box-shadow: 0 2px 8px rgba(28,25,23,0.06);
+    }
+    [data-cal-style="cards"] .time-class-clients {
+      margin-top: 8px;
+    }
+    [data-cal-style="cards"] .time-class-notes {
+      -webkit-line-clamp: 2;
+      margin-top: 6px;
+    }
+
+    .search-box { position: relative; margin-bottom: 14px; }
+    .search-box input {
+      width: 100%; padding: 12px 14px 12px 40px; border: 1px solid var(--border);
+      border-radius: 12px; font-size: 0.9375rem; background: var(--card); color: var(--text);
+      font-family: inherit;
+    }
+    .search-box::before { content: '🔍'; position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-size: 0.85rem; opacity: 0.5; }
+
+    .stats { display: flex; gap: 8px; margin-bottom: 12px; }
+    .stat-card {
+      flex: 1; background: var(--card); border-radius: 14px; padding: 12px 8px;
+      text-align: center; border: 1px solid var(--border); box-shadow: var(--shadow);
+    }
+    .stat-value { font-size: 1.25rem; font-weight: 600; color: var(--primary); letter-spacing: -0.03em; }
+    .stat-label { font-size: 0.68rem; color: var(--text-muted); margin-top: 2px; font-weight: 400; }
+
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(28,25,23,0.35);
+      z-index: 200; display: none; align-items: flex-end; justify-content: center;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal {
+      background: var(--card); border-radius: 24px 24px 0 0;
+      width: 100%; max-width: 480px; max-height: 92vh; overflow-y: auto; padding: 8px 20px 24px;
+      color: var(--text);
+    }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding-top: 12px; }
+    .modal-title { font-size: 1rem; font-weight: 600; letter-spacing: -0.02em; }
+    .modal-close {
+      width: 32px; height: 32px; border-radius: 50%; border: none;
+      background: var(--bg); font-size: 1.2rem; cursor: pointer; color: var(--text-muted);
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    .checkbox-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px; border-radius: 12px; margin-bottom: 6px;
+      border: 1px solid var(--border); background: var(--bg);
+    }
+    .checkbox-item:last-child { margin-bottom: 0; }
+    .checkbox-item label { flex: 1; font-weight: 500; cursor: pointer; order: 1; font-size: 0.875rem; }
+    .checkbox-item .paid-badge { order: 2; font-size: 0.7rem; padding: 3px 8px; border-radius: 999px; font-weight: 500; }
+    .checkbox-item input[type="checkbox"] {
+      width: 20px; height: 20px; accent-color: var(--primary); flex-shrink: 0; order: 0;
+    }
+    .paid-badge.yes { background: #d1fae5; color: #059669; }
+    .paid-badge.no { background: #ffe4e6; color: #e11d48; }
+
+    .client-select-list {
+      max-height: 220px; overflow-y: auto; border: 1px solid var(--border);
+      border-radius: 12px; padding: 4px;
+    }
+    .client-select-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 10px; border-radius: 10px; cursor: pointer;
+      border-bottom: 1px solid var(--border);
+    }
+    .client-select-item:last-child { border-bottom: none; }
+    .client-select-item input {
+      width: 18px; height: 18px; accent-color: var(--primary);
+      flex-shrink: 0;
+    }
+    .client-select-meta {
+      flex: 1; min-width: 0;
+      display: flex; align-items: baseline; gap: 8px;
+      overflow: hidden;
+    }
+    .client-select-name {
+      font-size: 0.875rem; font-weight: 500; color: var(--text);
+      line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      flex-shrink: 1; min-width: 0;
+    }
+    .client-select-phone {
+      font-size: 0.75rem; color: var(--text-muted); font-weight: 400;
+      line-height: 1.3; white-space: nowrap; flex-shrink: 0;
+    }
+
+    .toast {
+      position: fixed; bottom: calc(var(--nav-h) + 20px); left: 50%;
+      transform: translateX(-50%) translateY(12px);
+      background: #1c1917; color: white; padding: 12px 18px; border-radius: 12px;
+      font-size: 0.8125rem; font-weight: 500; opacity: 0; transition: all 0.25s;
+      z-index: 600; pointer-events: none; max-width: 90%; text-align: center;
+    }
+    .auth-gate ~ .toast, body > .toast {
+      bottom: 24px;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    .color-presets { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+    .color-swatch {
+      width: 32px; height: 32px; border-radius: 50%; border: 2px solid transparent; cursor: pointer;
+    }
+    .color-swatch.active { border-color: var(--text); }
+
+    .settings-block { margin-bottom: 28px; }
+    .settings-block h3 {
+      font-size: 0.72rem; margin-bottom: 10px; font-weight: 500;
+      color: var(--text-muted); letter-spacing: 0.02em;
+    }
+    .settings-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 12px 0; border-bottom: 1px solid var(--border);
+    }
+    .settings-row:last-child { border-bottom: none; }
+
+    .style-options { display: flex; flex-direction: column; gap: 8px; }
+    .style-option {
+      padding: 14px 16px; border: 1.5px solid var(--border); border-radius: 14px;
+      cursor: pointer; background: var(--card);
+    }
+    .style-option.active { border-color: var(--primary); background: var(--primary-light); }
+    .style-option strong { display: block; margin-bottom: 2px; font-weight: 500; font-size: 0.875rem; }
+    .style-option span { font-size: 0.75rem; color: var(--text-muted); }
+
+    .auth-card { text-align: center; padding: 24px 16px; }
+    .auth-card .avatar-big {
+      width: 64px; height: 64px; border-radius: 50%; background: var(--primary-light);
+      color: var(--primary); display: flex; align-items: center; justify-content: center;
+      font-size: 1.5rem; font-weight: 600; margin: 0 auto 12px;
+    }
+
+    .hidden { display: none !important; }
+    .mt-2 { margin-top: 8px; }
+    .mt-3 { margin-top: 12px; }
+    .mb-2 { margin-bottom: 8px; }
+    .text-muted { color: var(--text-muted); }
+    .text-sm { font-size: 0.8125rem; }
+    .flex { display: flex; }
+    .gap-2 { gap: 8px; }
+    .items-center { align-items: center; }
+    .justify-between { justify-content: space-between; }
+
+
+
+    .abon-block {
+      margin: 12px 0 4px; padding: 12px; border-radius: 12px;
+      border: 1px solid var(--border); background: var(--bg);
+    }
+    .abon-block h4 {
+      font-size: 0.8rem; font-weight: 600; margin-bottom: 8px; color: var(--text);
+    }
+    .abon-battery {
+      height: 12px; border-radius: 6px; background: #e7e5e4;
+      overflow: hidden; margin-bottom: 8px;
+    }
+    .abon-battery-fill {
+      height: 100%; border-radius: 6px; transition: width 0.25s, background 0.25s;
+    }
+    .abon-meta {
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 0.8rem; margin-bottom: 10px;
+    }
+    .abon-count { font-weight: 600; }
+    /* Баблы абонемента — обводка как в Instagram */
+    .abon-badge {
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 0.65rem; font-weight: 600;
+      padding: 2px 7px; border-radius: 999px; margin-left: 6px;
+      vertical-align: middle; line-height: 1.2;
+      background: rgba(16, 185, 129, 0.12);
+      color: #059669;
+      border: 1.5px solid rgba(16, 185, 129, 0.55);
+      box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.08);
+    }
+    .abon-badge.low {
+      background: rgba(245, 158, 11, 0.14);
+      color: #c2410c;
+      border-color: rgba(245, 158, 11, 0.6);
+      box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.1);
+    }
+    .abon-badge.empty {
+      background: rgba(239, 68, 68, 0.12);
+      color: #dc2626;
+      border-color: rgba(239, 68, 68, 0.55);
+      box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.1);
+    }
+
+    /* Имя участника в расписании — бабл с прозрачностью */
+    .name-chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 0.72rem; font-weight: 500;
+      padding: 2px 8px; border-radius: 999px;
+      margin: 1px 2px 1px 0;
+      border: 1.5px solid transparent;
+      line-height: 1.25; max-width: 100%;
+    }
+    .name-chip.paid {
+      background: rgba(16, 185, 129, 0.14);
+      color: #047857;
+      border-color: rgba(16, 185, 129, 0.45);
+    }
+    .name-chip.unpaid {
+      background: rgba(239, 68, 68, 0.10);
+      color: #b91c1c;
+      border-color: rgba(239, 68, 68, 0.4);
+    }
+    .name-chip .name-abon {
+      font-size: 0.62rem; font-weight: 700;
+      padding: 1px 5px; border-radius: 999px; margin-left: 2px;
+      border: 1.5px solid currentColor;
+      background: rgba(255, 255, 255, 0.45);
+      opacity: 0.95;
+    }
+    .name-chip.paid .name-abon {
+      color: #059669;
+      border-color: rgba(16, 185, 129, 0.55);
+      background: rgba(16, 185, 129, 0.12);
+    }
+    .name-chip.unpaid .name-abon {
+      color: #dc2626;
+      border-color: rgba(239, 68, 68, 0.5);
+      background: rgba(239, 68, 68, 0.1);
+    }
+    .name-chip.unpaid .name-abon.low,
+    .name-chip.paid .name-abon.low {
+      color: #c2410c;
+      border-color: rgba(245, 158, 11, 0.55);
+      background: rgba(245, 158, 11, 0.12);
+    }
+    .name-chip .name-abon.empty {
+      color: #dc2626;
+      border-color: rgba(239, 68, 68, 0.55);
+      background: rgba(239, 68, 68, 0.12);
+    }
+    .time-class-clients {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+      flex-shrink: 0; margin-top: 2px; font-size: 0.75rem; line-height: 1.35;
+    }
+
+    .auth-gate {
+      position: fixed; inset: 0; z-index: 500;
+      background: var(--bg);
+      display: flex; align-items: center; justify-content: center;
+      padding: 20px; overflow-y: auto;
+    }
+    .auth-gate.hidden { display: none !important; }
+    .auth-gate-card {
+      width: 100%; max-width: 360px; background: var(--card);
+      border-radius: 20px; padding: 28px 22px; border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+    }
+    .auth-gate-logo { font-size: 2.2rem; text-align: center; margin-bottom: 8px; }
+    .auth-gate-title { text-align: center; font-size: 1.15rem; font-weight: 600; margin-bottom: 4px; }
+    .auth-gate-sub { text-align: center; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 20px; }
+    .auth-divider {
+      display: flex; align-items: center; gap: 10px; margin: 16px 0;
+      color: var(--text-muted); font-size: 0.75rem;
+    }
+    .auth-divider::before, .auth-divider::after {
+      content: ''; flex: 1; height: 1px; background: var(--border);
+    }
+    .btn-yandex {
+      background: #fc3f1d; color: #fff; font-weight: 500;
+      gap: 8px;
+    }
+    .yandex-icon {
+      display: inline-flex; width: 20px; height: 20px; border-radius: 4px;
+      background: #fff; color: #fc3f1d; font-weight: 700; font-size: 0.75rem;
+      align-items: center; justify-content: center;
+    }
+    .auth-switch { text-align: center; margin-top: 16px; font-size: 0.8rem; color: var(--text-muted); }
+    .link-btn {
+      background: none; border: none; color: var(--primary); font-weight: 500;
+      cursor: pointer; font-size: inherit; font-family: inherit; padding: 0;
+    }
+    .auth-hint { margin-top: 12px; font-size: 0.7rem; color: var(--text-muted); text-align: center; line-height: 1.4; }
+    #appShell.hidden { display: none !important; }
+
+    @media (min-width: 480px) {
+      .modal-overlay { align-items: center; padding: 20px; }
+      .modal { border-radius: 20px; max-height: 85vh; padding: 16px 24px 24px; }
+    }
+
+    .storage-warn {
+      background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412;
+      border-radius: 12px; padding: 12px 14px; font-size: 0.78rem; line-height: 1.45;
+      margin-bottom: 14px;
+    }
+    [data-theme="dark"] .storage-warn {
+      background: #431407; border-color: #9a3412; color: #fdba74;
+    }
+    .storage-warn strong { display: block; margin-bottom: 4px; font-size: 0.82rem; }
+
+    /* iOS-like time picker */
+    .time-picker {
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      background: var(--bg); border: 1px solid var(--border); border-radius: 14px;
+      padding: 8px 12px; margin-top: 4px; position: relative;
+    }
+    .time-picker-col {
+      height: 132px; width: 72px; overflow-y: auto; scroll-snap-type: y mandatory;
+      -webkit-overflow-scrolling: touch; border-radius: 10px;
+      mask-image: linear-gradient(to bottom, transparent, #000 28%, #000 72%, transparent);
+      -webkit-mask-image: linear-gradient(to bottom, transparent, #000 28%, #000 72%, transparent);
+    }
+    .time-picker-col::-webkit-scrollbar { display: none; }
+    .time-picker-item {
+      height: 44px; display: flex; align-items: center; justify-content: center;
+      font-size: 1.25rem; font-weight: 600; color: var(--text-muted);
+      scroll-snap-align: center; cursor: pointer; user-select: none;
+    }
+    .time-picker-item.active { color: var(--primary); font-size: 1.4rem; }
+    .time-picker-sep {
+      font-size: 1.4rem; font-weight: 700; color: var(--text); padding-bottom: 2px;
+    }
+    .time-picker-highlight {
+      pointer-events: none; position: absolute; left: 12px; right: 12px; top: 50%;
+      height: 44px; margin-top: -22px; border-radius: 10px;
+      border: 1.5px solid color-mix(in srgb, var(--primary) 35%, var(--border));
+      background: color-mix(in srgb, var(--primary) 8%, transparent);
+    }
+    #classTime { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
+
+    .contacts-status {
+      font-size: 0.75rem; color: var(--text-muted); margin-top: 6px; line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+  
+  <!-- AUTH GATE: регистрация / вход -->
+  <div id="authGate" class="auth-gate hidden">
+    <div class="auth-gate-card">
+      <div class="auth-gate-logo">💃</div>
+      <h1 class="auth-gate-title">Танцевальный тренер</h1>
+      <p class="auth-gate-sub" id="authGateSub">Создайте профиль, чтобы сохранять клиентов и расписание</p>
+      <div class="storage-warn" style="text-align:left;margin-bottom:16px;">
+        <strong>☁ Синхронизация между устройствами</strong>
+        Войдите через <b>Яндекс ID</b> — клиенты и расписание автоматически сохраняются на Яндекс.Диск и доступны на телефоне и компьютере.<br>
+        Локальная регистрация (телефон/пароль) работает <b>только на этом устройстве</b>.
+      </div>
+
+      <div id="authPanelRegister">
+        <div class="form-group"><label>Имя *</label><input type="text" id="regName" placeholder="Ваше имя" autocomplete="name"></div>
+        <div class="form-group"><label>Телефон или email *</label><input type="text" id="regLogin" placeholder="+7… или email" autocomplete="username"></div>
+        <div class="form-group"><label>Пароль *</label><input type="password" id="regPass" placeholder="Минимум 4 символа" autocomplete="new-password"></div>
+        <button type="button" class="btn btn-primary btn-block" data-action="register-local">Зарегистрироваться</button>
+        <div class="auth-divider"><span>или</span></div>
+        <button type="button" class="btn btn-yandex btn-block" data-action="yandex-login">
+          <span class="yandex-icon">Я</span> Войти через Яндекс ID
+        </button>
+        <p class="auth-switch">Уже есть аккаунт? <button type="button" class="link-btn" data-action="show-login">Войти</button></p>
+      </div>
+
+      <div id="authPanelLogin" class="hidden">
+        <div class="form-group"><label>Телефон или email</label><input type="text" id="loginLogin" placeholder="+7… или email" autocomplete="username"></div>
+        <div class="form-group"><label>Пароль</label><input type="password" id="loginPass" placeholder="Пароль" autocomplete="current-password"></div>
+        <button type="button" class="btn btn-primary btn-block" data-action="login-local">Войти</button>
+        <div class="auth-divider"><span>или</span></div>
+        <button type="button" class="btn btn-yandex btn-block" data-action="yandex-login">
+          <span class="yandex-icon">Я</span> Войти через Яндекс ID
+        </button>
+        <p class="auth-switch">Нет аккаунта? <button type="button" class="link-btn" data-action="show-register">Регистрация</button></p>
+      </div>
+
+      <div id="authYandexSetup" class="hidden" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);">
+        <div class="form-group" style="margin-bottom:8px;">
+          <label style="font-size:0.72rem;">Yandex ClientID (только если не зашит в код)</label>
+          <input type="text" id="authYandexClientId" placeholder="ClientID" autocomplete="off">
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm btn-block" data-action="save-yandex-clientid">Сохранить ClientID</button>
+        <p class="auth-hint" id="yandexHint" style="margin-top:8px;"></p>
+      </div>
+      <p class="auth-hint" id="yandexHintInline" style="margin-top:10px;"></p>
+    </div>
+  </div>
+
+  <div id="appShell">
+  <div class="header" id="appHeader">
+    <h1 id="appTitle">💃 Танцевальный тренер</h1>
+    <div class="header-sub" id="appSubtitle">Учёт клиентов и занятий</div>
+  </div>
+
+  <div class="content">
+    <div id="section-schedule" class="section active" data-screen="schedule">
+      <div class="week-nav">
+        <button type="button" class="btn btn-ghost" data-action="week-prev">◀</button>
+        <div class="week-nav-title" id="periodTitle">—</div>
+        <button type="button" class="btn btn-ghost" data-action="week-next">▶</button>
+      </div>
+      <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;">
+        <button type="button" class="btn btn-secondary btn-sm" data-action="copy-week" style="flex:1;">📋 Копировать неделю</button>
+        <label class="btn btn-secondary btn-sm" style="flex:1;cursor:pointer;margin:0;">
+          📅 Выбрать дату
+          <input type="date" id="weekPicker" style="position:absolute;opacity:0;width:0;height:0;">
+        </label>
+      </div>
+      <div class="week-days" id="weekDays"></div>
+      <div class="flex justify-between items-center mb-2" style="gap:8px;flex-wrap:wrap;">
+        <div class="text-sm text-muted" id="selectedDayLabel">Сегодня</div>
+        <button type="button" class="btn btn-danger btn-sm" data-action="clear-day">🗑 Очистить день</button>
+      </div>
+      <div id="dayClasses"></div>
+    </div>
+
+    <div id="section-clients" class="section" data-screen="clients">
+      <div class="stats">
+        <div class="stat-card"><div class="stat-value" id="statClients">0</div><div class="stat-label">Клиентов</div></div>
+        <div class="stat-card"><div class="stat-value" id="statWeek">0</div><div class="stat-label">За неделю</div></div>
+        <div class="stat-card"><div class="stat-value" id="statMonth">0</div><div class="stat-label">За месяц</div></div>
+      </div>
+      <div class="stats" style="margin-top:-6px;">
+        <div class="stat-card"><div class="stat-value" id="statClasses">0</div><div class="stat-label">Всего занятий</div></div>
+      </div>
+      <div class="search-box">
+        <input type="text" id="clientSearch" placeholder="Поиск...">
+      </div>
+      <div id="clientsList"></div>
+    </div>
+
+
+    <div id="section-club" class="section" data-screen="club">
+      <div class="club-summary" id="clubSummary"></div>
+      <div id="clubGroupsList"></div>
+      <div class="club-section-title">Члены клуба</div>
+      <div id="clubMembersList"></div>
+      <button type="button" class="btn btn-primary btn-block club-form-group-btn" data-action="club-group-create">Сформировать группу</button>
+    </div>
+
+    <div id="section-settings" class="section" data-screen="settings">
+      <div class="card auth-card">
+        <div class="avatar-big" id="profileAvatar">?</div>
+        <div style="font-weight:700;font-size:1.1rem;" id="profileName">Гость</div>
+        <div class="text-sm text-muted" id="profilePhone"></div>
+        <button type="button" class="btn btn-secondary btn-sm mt-3" data-action="open-auth">Редактировать профиль</button>
+        <button type="button" class="btn btn-danger btn-sm mt-2" data-action="logout">Выйти из аккаунта</button>
+      </div>
+      <div class="settings-block">
+        <h3>Название календаря</h3>
+        <div class="form-group" style="margin:0;">
+          <input type="text" id="settingCalendarName" placeholder="Например: Сальса группа А">
+        </div>
+      </div>
+      <div class="settings-block">
+        <h3>Тема</h3>
+        <div class="settings-row">
+          <span>Тёмная тема</span>
+          <input type="checkbox" id="settingDark" style="width:22px;height:22px;accent-color:var(--primary);">
+        </div>
+      </div>
+      <div class="settings-block">
+        <h3>Цвет приложения</h3>
+        <div class="color-presets" id="colorPresets"></div>
+        <div class="form-group mt-2">
+          <label>Свой цвет</label>
+          <input type="color" id="settingColor" value="#e11d48" style="height:44px;padding:4px;">
+        </div>
+      </div>
+      <div class="settings-block">
+        <h3>Стиль календаря</h3>
+        <div class="style-options" id="styleOptions">
+          <div class="style-option active" data-style="standard"><strong>Стандартный</strong><span>Решётка времени с деталями</span></div>
+          <div class="style-option" data-style="cards"><strong>Карточки</strong><span>Список занятий крупными карточками</span></div>
+        </div>
+      </div>
+
+
+      <div class="settings-block">
+        <h3>Контакты устройства</h3>
+        <p class="text-sm text-muted mb-2" id="contactsSettingsStatus">Проверка…</p>
+        <button type="button" class="btn btn-secondary btn-block btn-sm" data-action="pick-contacts">📱 Импорт контактов</button>
+        <p class="text-sm text-muted" style="margin-top:8px;font-size:0.72rem;">На Android Chrome — системный выбор контактов. На iPhone и других — импорт из файла vCard/CSV или вставка списка имён.</p>
+      </div>
+      <div class="settings-block">
+        <h3>Данные</h3>
+        <div class="storage-warn" id="syncStatusBox">
+          <strong>☁ Облачная синхронизация</strong>
+          <span id="syncStatus">Проверка…</span>
+          <div style="margin-top:8px;">
+            <button type="button" class="btn btn-secondary btn-sm" data-action="cloud-sync-now" style="width:100%;">Обновить из облака</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-action="cloud-diagnose" style="width:100%;margin-top:6px;">Проверить синхронизацию</button>
+            <pre id="cloudDiagnostics" class="hidden" style="margin-top:8px;padding:10px;border-radius:10px;background:rgba(0,0,0,0.05);font-size:0.7rem;line-height:1.5;white-space:pre-wrap;word-break:break-word;"></pre>
+            <div id="buildInfo" style="margin-top:8px;font-size:0.68rem;opacity:0.75;"></div>
+            <div id="buildStamp" style="margin-top:8px;font-size:0.68rem;opacity:0.75;"></div>
+          </div>
+          <p style="margin-top:8px;font-size:0.72rem;opacity:0.9;">При входе через Яндекс ID данные пишутся в папку приложения на Яндекс.Диске. Локальный аккаунт (пароль) — только на этом устройстве; для синхронизации используйте Яндекс ID.</p>
+        </div>
+        <button type="button" class="btn btn-danger btn-block btn-sm" data-action="export">📤 Экспорт данных</button>
+        <button type="button" class="btn btn-secondary btn-block btn-sm mt-2" data-action="import-trigger">📥 Импорт данных</button>
+        <input type="file" id="importFile" accept="application/json" class="hidden">
+        <div id="buildVersion" style="margin-top:14px;text-align:center;font-size:0.68rem;color:var(--text-muted);opacity:0.8;">сборка —</div>
+      </div>
+    </div>
+  </div>
+
+  <button type="button" class="fab" id="fabMain" data-action="fab-add">+</button>
+
+  <nav class="bottom-nav" id="bottomNav">
+    <button type="button" class="nav-item active" data-tab="schedule"><span class="nav-icon">📅</span>Расписание</button>
+    <button type="button" class="nav-item" data-tab="clients"><span class="nav-icon">👥</span>Клиенты</button>
+    <button type="button" class="nav-item" data-tab="club"><span class="nav-icon">🏆</span>Клуб</button>
+    <button type="button" class="nav-item" data-tab="settings"><span class="nav-icon">⚙️</span>Настройки</button>
+  </nav>
+
+  <div class="modal-overlay" id="clientModal">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title" id="clientModalTitle">Новый клиент</div>
+        <button type="button" class="modal-close" data-close="clientModal">×</button>
+      </div>
+      <form id="clientForm">
+        <input type="hidden" id="clientId">
+        <button type="button" class="btn btn-secondary btn-block" data-action="pick-contacts" style="margin-bottom:10px;">📱 Импорт контактов</button>
+        <p class="contacts-status" id="contactsStatusHint" style="margin-bottom:14px;"></p>
+        <input type="file" id="contactsFileInput" accept=".vcf,text/vcard,text/x-vcard,.csv,text/csv,text/plain" class="hidden" multiple>
+        <div class="form-group"><label>Имя *</label><input type="text" id="clientName" required placeholder="Анна Иванова"></div>
+        <div class="form-group"><label>Телефон</label><input type="tel" id="clientPhone" placeholder="+7 999 123-45-67"></div>
+        <div class="form-group"><label>Заметки</label><textarea id="clientNotes" rows="3" placeholder="Уровень, особенности..."></textarea></div>
+        <div id="abonementPanel" class="abon-block hidden">
+          <h4>Абонемент (для «Группа»)</h4>
+          <div id="abonementInfo"></div>
+          <div class="chip-row" id="abonementChips" style="margin-top:8px;">
+            <button type="button" class="chip" data-action="abon-add" data-sessions="4">+ 4</button>
+            <button type="button" class="chip" data-action="abon-add" data-sessions="6">+ 6</button>
+            <button type="button" class="chip" data-action="abon-add" data-sessions="8">+ 8</button>
+            <button type="button" class="chip" data-action="abon-clear" style="color:#dc2626;">Сбросить</button>
+          </div>
+          <p class="text-sm text-muted" style="margin-top:8px;font-size:0.72rem;">Списывается автоматически на занятиях с включённой опцией «Групповое занятие»</p>
+        </div>
+        <div class="flex gap-2 mt-3">
+          <button type="button" class="btn btn-secondary btn-block" data-close="clientModal">Отмена</button>
+          <button type="submit" class="btn btn-primary btn-block">Сохранить</button>
+        </div>
+        <button type="button" class="btn btn-danger btn-block mt-2 hidden" id="btnDeleteClient" data-action="client-delete">Удалить</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="classModal">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title" id="classModalTitle">Новое занятие</div>
+        <button type="button" class="modal-close" data-close="classModal">×</button>
+      </div>
+      <form id="classForm">
+        <input type="hidden" id="classId">
+        <div class="form-group"><label>Название занятия</label><input type="text" id="classTitle" placeholder="Например: Сальса… (необязательно)"></div>
+        <div class="form-row">
+          <div class="form-group"><label>Дата *</label><input type="date" id="classDate" required></div>
+          <div class="form-group"><label>Время *</label>
+            <input type="hidden" id="classTime" value="18:00" required>
+            <div class="time-picker" id="timePicker">
+              <div class="time-picker-highlight"></div>
+              <div class="time-picker-col" id="timePickerHours"></div>
+              <div class="time-picker-sep">:</div>
+              <div class="time-picker-col" id="timePickerMinutes"></div>
+            </div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Длительность</label>
+          <input type="hidden" id="classDuration" value="60">
+          <div class="chip-row" id="durationChips">
+            <button type="button" class="chip" data-duration="30">30 мин</button>
+            <button type="button" class="chip" data-duration="45">45 мин</button>
+            <button type="button" class="chip active" data-duration="60">60 мин</button>
+            <button type="button" class="chip" data-duration="75">75 мин</button>
+            <button type="button" class="chip" data-duration="90">90 мин</button>
+            <button type="button" class="chip" data-duration="120">120 мин</button>
+            <input type="number" class="chip-custom" id="durationCustom" min="5" max="300" placeholder="своя" inputmode="numeric">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Группа клуба</label>
+          <select id="classClubGroup">
+            <option value="">— не выбрана —</option>
+          </select>
+          <p class="text-sm text-muted" style="margin-top:6px;font-size:0.72rem;">Группа из раздела «Клуб» — в расписании синим, без оплаты за занятие</p>
+        </div>
+        <div class="form-group"><label>Клиенты (разовые)</label><div class="client-select-list" id="classClientSelect"></div></div>
+        <div class="form-group"><label>Комментарий</label><textarea id="classNotes" rows="2" placeholder="Зал, тема…"></textarea></div>
+        <div class="form-group" style="margin-bottom:12px;">
+          <label class="checkbox-item" style="margin:0;cursor:pointer;">
+            <input type="checkbox" id="classIsGroup" style="width:20px;height:20px;accent-color:var(--primary);">
+            <span style="font-weight:500;font-size:0.875rem;">Групповое занятие (списывать абонемент)</span>
+          </label>
+          <p class="text-sm text-muted" style="margin-top:6px;font-size:0.72rem;padding-left:32px;">Если включено — у участников с абонементом автоматически списывается 1 занятие и ставится «Оплатил».</p>
+        </div>
+        <div class="flex gap-2 mt-3">
+          <button type="button" class="btn btn-secondary btn-block" data-close="classModal">Отмена</button>
+          <button type="submit" class="btn btn-primary btn-block">Сохранить</button>
+        </div>
+        <button type="button" class="btn btn-danger btn-block mt-2 hidden" id="btnDeleteClass" data-action="class-delete">Удалить занятие</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="classDetailModal">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">Занятие</div>
+        <button type="button" class="modal-close" data-close="classDetailModal">×</button>
+      </div>
+      <div id="classDetailContent"></div>
+      <div class="flex gap-2 mt-3">
+        <button type="button" class="btn btn-secondary btn-block" data-action="class-edit-current">✏️ Изменить</button>
+        <button type="button" class="btn btn-primary btn-block" data-close="classDetailModal">Готово</button>
+      </div>
+      <button type="button" class="btn btn-danger btn-block mt-2" data-action="class-delete">🗑 Удалить занятие</button>
+    </div>
+  </div>
+
+
+  <div class="modal-overlay" id="clubMemberModal">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title" id="clubMemberModalTitle">Член клуба</div>
+        <button type="button" class="modal-close" data-close="clubMemberModal">×</button>
+      </div>
+      <form id="clubMemberForm">
+        <input type="hidden" id="clubMemberId">
+        <div class="form-group"><label>Имя *</label><input type="text" id="clubMemberName" required placeholder="Иван Иванов"></div>
+        <div class="form-group"><label>Телефон</label><input type="tel" id="clubMemberPhone" placeholder="+7 ..."></div>
+        <div class="form-group"><label>Заметки</label><textarea id="clubMemberNotes" rows="2" placeholder="..."></textarea></div>
+        <div class="flex gap-2 mt-3">
+          <button type="button" class="btn btn-secondary btn-block" data-close="clubMemberModal">Отмена</button>
+          <button type="submit" class="btn btn-primary btn-block">Сохранить</button>
+        </div>
+        <button type="button" class="btn btn-danger btn-block mt-2 hidden" id="btnDeleteClubMember" data-action="club-member-delete">Удалить</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="clubGroupModal">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title" id="clubGroupModalTitle">Новая группа</div>
+        <button type="button" class="modal-close" data-close="clubGroupModal">×</button>
+      </div>
+      <form id="clubGroupForm">
+        <input type="hidden" id="clubGroupId">
+        <div class="form-group"><label>Название группы *</label><input type="text" id="clubGroupName" required placeholder="Латина · вечер"></div>
+        <div class="form-group"><label>Членский взнос (₽) *</label><input type="number" id="clubGroupFee" required min="0" step="100" placeholder="3000" value="3000"></div>
+        <div class="form-group"><label>Комментарий</label><textarea id="clubGroupNotes" rows="2" placeholder="Зал, расписание..."></textarea></div>
+        <div class="form-group"><label>Участники</label><div class="client-select-list" id="clubGroupMemberSelect"></div></div>
+        <div class="flex gap-2 mt-3">
+          <button type="button" class="btn btn-secondary btn-block" data-close="clubGroupModal">Отмена</button>
+          <button type="submit" class="btn btn-primary btn-block">Сохранить</button>
+        </div>
+        <button type="button" class="btn btn-danger btn-block mt-2 hidden" id="btnDeleteClubGroup" data-action="club-group-delete">Удалить группу</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="clubGroupDetailModal">
+    <div class="modal" style="max-height:96vh;">
+      <div class="modal-header">
+        <div class="modal-title" id="clubGroupDetailTitle">Группа</div>
+        <button type="button" class="modal-close" data-close="clubGroupDetailModal">×</button>
+      </div>
+      <div id="clubGroupDetailContent"></div>
+      <div class="flex gap-2 mt-3">
+        <button type="button" class="btn btn-secondary btn-block" data-action="club-group-edit-current">✏️ Изменить</button>
+        <button type="button" class="btn btn-primary btn-block" data-close="clubGroupDetailModal">Готово</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="clubDiscountModal">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">Скидка</div>
+        <button type="button" class="modal-close" data-close="clubDiscountModal">×</button>
+      </div>
+      <p class="text-sm text-muted mb-2" id="clubDiscountMemberName"></p>
+      <input type="hidden" id="clubDiscountMemberId">
+      <div class="chip-row" id="discountChips">
+        <button type="button" class="chip" data-action="club-discount-set" data-amount="0">Без скидки</button>
+        <button type="button" class="chip" data-action="club-discount-set" data-amount="500">500 ₽</button>
+        <button type="button" class="chip" data-action="club-discount-set" data-amount="1000">1000 ₽</button>
+        <button type="button" class="chip" data-action="club-discount-set" data-amount="1500">1500 ₽</button>
+      </div>
+      <div class="form-group mt-3">
+        <label>Своя сумма (₽)</label>
+        <input type="number" id="clubDiscountCustom" min="0" step="50" placeholder="Например 700">
+      </div>
+      <button type="button" class="btn btn-primary btn-block" data-action="club-discount-custom">Применить</button>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="authModal">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">Профиль</div>
+        <button type="button" class="modal-close" data-close="authModal">×</button>
+      </div>
+      <p class="text-sm text-muted mb-2">Данные на устройстве. Яндекс ID / SMS требуют сервер — здесь локальный профиль.</p>
+      <div class="form-group"><label>Имя</label><input type="text" id="authName" placeholder="Ваше имя"></div>
+      <div class="form-group"><label>Телефон</label><input type="tel" id="authPhone" placeholder="+7 ..."></div>
+      <button type="button" class="btn btn-primary btn-block" data-action="profile-save">Сохранить профиль</button>
+      <button type="button" class="btn btn-secondary btn-block mt-2" data-close="authModal">Закрыть</button>
+    </div>
+  </div>
+
+  </div><!-- /appShell -->
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+
+(function App() {
+  'use strict';
+
+  /* =========================================================
+   * 1. CONFIG — константы
+   * ========================================================= */
+  const CONFIG = {
+    /* Номер сборки. Меняется при каждой правке — виден в шапке и в Настройках.
+       Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
+    BUILD: '2026-08-06 · 4',
+    STORAGE_KEY: 'dance_trainer_v3',
+    USERS_KEY: 'dance_trainer_users_v1',
+    DAY_START_HOUR: 8,
+    DAY_END_HOUR: 22,
+    HOUR_HEIGHT: 96,
+    SLOT_STEP_MIN: 15,
+    COLOR_PRESETS: ['#e11d48', '#db2777', '#c026d3', '#7c3aed', '#2563eb', '#0891b2', '#059669', '#d97706'],
+    DEFAULT_SETTINGS: {
+      calendarName: '', dark: false, primary: '#e11d48',
+      calStyle: 'standard', profileName: '', profilePhone: '',
+      yandexClientId: ''
+    },
+    /* Метка сборки — видна в Настройках. Нужна, чтобы сразу понимать,
+       какая версия файла реально открыта на устройстве. */
+    BUILD: '2026-08-06 · fix-5',
+    /* Версия сборки — видна в Настройках. Меняйте при каждой заливке,
+       чтобы сразу понимать, какой файл реально открыт в приложении. */
+    BUILD: '2026-08-06 · 3',
+    /* ClientID можно задать здесь или в Настройках */
+    YANDEX_CLIENT_ID: 'ca84af634c284a99b2a6ab6ce1d9b378'
+  };
+
+  /* =========================================================
+   * 2. STORAGE
+   * ========================================================= */
+  const Storage = {
+    available: false,
+    memory: {},
+    init() {
+      try {
+        localStorage.setItem('__t', '1');
+        localStorage.removeItem('__t');
+        this.available = true;
+      } catch (e) { this.available = false; }
+    },
+    loadKey(key) {
+      this.init();
+      try {
+        if (this.available) {
+          const raw = localStorage.getItem(key);
+          return raw ? JSON.parse(raw) : null;
+        }
+        return this.memory[key] || null;
+      } catch (e) {
+        console.error('[Storage.loadKey]', e);
+        return null;
+      }
+    },
+    saveKey(key, payload) {
+      try {
+        if (this.available) localStorage.setItem(key, JSON.stringify(payload));
+        else this.memory[key] = payload;
+      } catch (e) {
+        console.error('[Storage.saveKey]', e);
+        this.memory[key] = payload;
+        this.available = false;
+      }
+    },
+    load() { return this.loadKey(CONFIG.STORAGE_KEY); },
+    save(payload) { this.saveKey(CONFIG.STORAGE_KEY, payload); }
+  };
+
+  /* =========================================================
+   * 3. STATE
+   * ========================================================= */
+  const State = {
+    clients: [],
+    classes: [],
+    clubMembers: [],
+    clubGroups: [],
+    settings: Object.assign({}, CONFIG.DEFAULT_SETTINGS),
+    currentUser: null, // { id, name, login, yandexId? }
+    currentWeekStart: null,
+    selectedDate: null,
+    currentDetailClassId: null,
+    currentDetailGroupId: null,
+    dataKey() {
+      return this.currentUser ? CONFIG.STORAGE_KEY + '_' + this.currentUser.id : CONFIG.STORAGE_KEY;
+    },
+    persist() {
+      if (!this.currentUser) return;
+      Storage.saveKey(this.dataKey(), {
+        clients: this.clients,
+        classes: this.classes,
+        clubMembers: this.clubMembers,
+        clubGroups: this.clubGroups,
+        settings: this.settings
+      });
+      try { if (typeof Cloud !== 'undefined') Cloud.schedulePush(); } catch (e) {}
+    },
+    hydrate(data) {
+      if (!data) {
+        this.clients = [];
+        this.classes = [];
+        this.clubMembers = [];
+        this.clubGroups = [];
+        this.settings = Object.assign({}, CONFIG.DEFAULT_SETTINGS);
+        return;
+      }
+      this.clients = data.clients || [];
+      this.classes = data.classes || [];
+      this.clubMembers = data.clubMembers || [];
+      this.clubGroups = data.clubGroups || [];
+      this.settings = Object.assign({}, CONFIG.DEFAULT_SETTINGS, data.settings || {});
+    }
+  };
+
+  /* =========================================================
+   * 4. DOMAIN — чистая логика
+   * ========================================================= */
+  const Domain = {
+    uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); },
+    getMonday(d) {
+      const date = new Date(d);
+      const day = date.getDay();
+      date.setDate(date.getDate() + (day === 0 ? -6 : 1 - day));
+      date.setHours(0, 0, 0, 0);
+      return date;
+    },
+    addDays(date, n) {
+      const d = new Date(date);
+      d.setDate(d.getDate() + n);
+      return d;
+    },
+    formatDate(d) {
+      const date = new Date(d);
+      return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+    },
+    formatDisplayDate(dateStr) {
+      const d = new Date(dateStr + 'T12:00:00');
+      const days = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+      const months = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+      return d.getDate() + ' ' + months[d.getMonth()] + ' (' + days[d.getDay()] + ')';
+    },
+    formatWeekRange(monday) {
+      const end = this.addDays(monday, 6);
+      const months = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+      if (monday.getMonth() === end.getMonth())
+        return monday.getDate() + '–' + end.getDate() + ' ' + months[monday.getMonth()] + ' ' + monday.getFullYear();
+      return monday.getDate() + ' ' + months[monday.getMonth()] + ' – ' + end.getDate() + ' ' + months[end.getMonth()];
+    },
+    timeToMinutes(timeStr) {
+      const parts = (timeStr || '00:00').split(':').map(Number);
+      return parts[0] * 60 + (parts[1] || 0);
+    },
+    minutesToTime(mins) {
+      return String(Math.floor(mins / 60)).padStart(2, '0') + ':' + String(mins % 60).padStart(2, '0');
+    },
+    intervalsOverlap(a, da, b, db) { return a < b + db && b < a + da; },
+    findOverlaps(classes, date, time, duration, excludeId) {
+      const start = this.timeToMinutes(time);
+      const dur = duration || 60;
+      return classes.filter(function (c) {
+        if (c.date !== date) return false;
+        if (excludeId && c.id === excludeId) return false;
+        return Domain.intervalsOverlap(start, dur, Domain.timeToMinutes(c.time), c.duration || 60);
+      });
+    },
+    findFreeSlots(classes, date, duration, excludeId) {
+      const dur = duration || 60;
+      const free = [];
+      for (var t = CONFIG.DAY_START_HOUR * 60; t + dur <= CONFIG.DAY_END_HOUR * 60; t += CONFIG.SLOT_STEP_MIN) {
+        var busy = classes.some(function (c) {
+          if (c.date !== date) return false;
+          if (excludeId && c.id === excludeId) return false;
+          return Domain.intervalsOverlap(t, dur, Domain.timeToMinutes(c.time), c.duration || 60);
+        });
+        if (!busy) free.push(Domain.minutesToTime(t));
+      }
+      return free;
+    },
+    classPaymentStatus(cls) {
+      // Занятие группы клуба — отдельный синий стиль, без оплаты занятия
+      if (cls && cls.clubGroupId) return 'club-group';
+      var ids = cls.clientIds || [];
+      if (!ids.length) return 'no-clients';
+      var paidCount = ids.filter(function (id) { return cls.payments && cls.payments[id]; }).length;
+      return paidCount === ids.length ? 'paid-all' : 'has-unpaid';
+    },
+    normalizePhone(phone) { return (phone || '').replace(/\D/g, ''); },
+    /** Приводит ввод к виду +7 999 123-45-67. Всё, кроме цифр, отбрасывается. */
+    formatPhoneInput(value) {
+      var d = String(value == null ? '' : value).replace(/\D/g, '');
+      if (!d) return '';
+      if (d.charAt(0) === '8') d = '7' + d.slice(1);
+      if (d.charAt(0) === '9' && d.length <= 10) d = '7' + d;
+      if (d.charAt(0) !== '7') d = '7' + d;
+      d = d.slice(0, 11);
+      var out = '+7';
+      if (d.length > 1) out += ' ' + d.slice(1, 4);
+      if (d.length > 4) out += ' ' + d.slice(4, 7);
+      if (d.length > 7) out += '-' + d.slice(7, 9);
+      if (d.length > 9) out += '-' + d.slice(9, 11);
+      return out;
+    },
+    /** Телефон введён полностью: ровно 11 цифр. Пустое поле считается валидным. */
+    isValidPhone(value) {
+      var d = String(value == null ? '' : value).replace(/\D/g, '');
+      return d.length === 0 || d.length === 11;
+    },
+    shadeColor(color, percent) {
+      var num = parseInt(color.replace('#', ''), 16);
+      var amt = Math.round(2.55 * percent);
+      var R = Math.min(255, Math.max(0, (num >> 16) + amt));
+      var G = Math.min(255, Math.max(0, ((num >> 8) & 0x00FF) + amt));
+      var B = Math.min(255, Math.max(0, (num & 0x0000FF) + amt));
+      return '#' + (0x1000000 + R * 0x10000 + G * 0x100 + B).toString(16).slice(1);
+    },
+
+    /** Занятие «Группа» или «Группа + растяжка» (без учёта регистра) — fallback для старых данных */
+    isGroupClassTitle(title) {
+      var t = (title || '').toString().trim().toLowerCase()
+        .replace(/\u00a0/g, ' ')
+        .replace(/\s+/g, ' ')
+        .replace(/ё/g, 'е');
+      if (!t) return false;
+      if (t === 'группа') return true;
+      if (t.indexOf('группа') === 0 && t.indexOf('растяж') !== -1) return true;
+      if (/^группа(\s|$|\+|\/|,)/.test(t) && t.indexOf('растяж') !== -1) return true;
+      return false;
+    },
+    /** Групповое занятие: явный флаг isGroup (приоритет), иначе эвристика по названию */
+    isGroupClass(cls) {
+      if (!cls) return false;
+      // Явный флаг всегда побеждает — не сбрасываем из-за абонементов
+      if (cls.isGroup === true) return true;
+      if (cls.isGroup === false) return false;
+      return this.isGroupClassTitle(cls.title);
+    },
+    abonementLevel(remaining, total) {
+      if (!total || remaining <= 0) return 'empty';
+      var ratio = remaining / total;
+      if (ratio <= 0.25) return 'low';  /* 1 из 8 — low (оранжевый), не empty */
+      if (ratio <= 0.5) return 'low';
+      return 'ok';
+    },
+    abonementColor(remaining, total) {
+      if (!total || remaining <= 0) return '#ef4444';
+      var ratio = Math.max(0, Math.min(1, remaining / total));
+      // зелёный → жёлтый → красный
+      if (ratio > 0.5) {
+        var t = (ratio - 0.5) * 2;
+        return 'rgb(' + Math.round(234 - t * 180) + ',' + Math.round(179 + t * 30) + ', 8)';
+      }
+      var t2 = ratio * 2;
+      return 'rgb(239,' + Math.round(68 + t2 * 111) + ', 68)';
+    },
+    escapeHtml(str) {
+      if (!str) return '';
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    },
+    formatTimeRange(startTime, duration) {
+      var parts = (startTime || '00:00').split(':').map(Number);
+      var start = parts[0] * 60 + (parts[1] || 0);
+      var end = start + (Number(duration) || 60);
+      var eh = Math.floor(end / 60) % 24;
+      var em = end % 60;
+      var pad = function (n) { return String(n).padStart(2, '0'); };
+      return pad(parts[0]) + ':' + pad(parts[1] || 0) + '–' + pad(eh) + ':' + pad(em);
+    }
+  };
+
+
+  /* =========================================================
+   * 4b. AUTH — регистрация, сессия, Яндекс ID
+   * ========================================================= */
+  const Auth = {
+    loadUsers() {
+      return Storage.loadKey(CONFIG.USERS_KEY) || { users: [], sessionId: null };
+    },
+    saveUsers(db) {
+      Storage.saveKey(CONFIG.USERS_KEY, db);
+    },
+    /** Pure JS SHA-256 (работает и на file://, где crypto.subtle недоступен) */
+    _sha256sync(str) {
+      function rotr(n, x) { return (x >>> n) | (x << (32 - n)); }
+      function toBytes(s) {
+        s = unescape(encodeURIComponent(String(s || '')));
+        var b = new Array(s.length);
+        for (var i = 0; i < s.length; i++) b[i] = s.charCodeAt(i) & 255;
+        return b;
+      }
+      var K = [
+        0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+        0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+        0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+        0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+        0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+        0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+        0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+        0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+      ];
+      var H = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+      var bytes = toBytes(str);
+      var l = bytes.length;
+      var bitLen = l * 8;
+      bytes.push(0x80);
+      while ((bytes.length % 64) !== 56) bytes.push(0);
+      for (var i = 7; i >= 0; i--) bytes.push((bitLen / Math.pow(2, 8 * i)) & 0xff);
+      for (var chunk = 0; chunk < bytes.length; chunk += 64) {
+        var w = new Array(64);
+        for (var i = 0; i < 16; i++) {
+          var j = chunk + i * 4;
+          w[i] = ((bytes[j] << 24) | (bytes[j + 1] << 16) | (bytes[j + 2] << 8) | bytes[j + 3]) >>> 0;
+        }
+        for (var i = 16; i < 64; i++) {
+          var s0 = rotr(7, w[i - 15]) ^ rotr(18, w[i - 15]) ^ (w[i - 15] >>> 3);
+          var s1 = rotr(17, w[i - 2]) ^ rotr(19, w[i - 2]) ^ (w[i - 2] >>> 10);
+          w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;
+        }
+        var a = H[0], b = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];
+        for (var i = 0; i < 64; i++) {
+          var S1 = rotr(6, e) ^ rotr(11, e) ^ rotr(25, e);
+          var ch = (e & f) ^ (~e & g);
+          var t1 = (h + S1 + ch + K[i] + w[i]) >>> 0;
+          var S0 = rotr(2, a) ^ rotr(13, a) ^ rotr(22, a);
+          var maj = (a & b) ^ (a & c) ^ (b & c);
+          var t2 = (S0 + maj) >>> 0;
+          h = g; g = f; f = e; e = (d + t1) >>> 0;
+          d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+        }
+        H[0] = (H[0] + a) >>> 0; H[1] = (H[1] + b) >>> 0; H[2] = (H[2] + c) >>> 0; H[3] = (H[3] + d) >>> 0;
+        H[4] = (H[4] + e) >>> 0; H[5] = (H[5] + f) >>> 0; H[6] = (H[6] + g) >>> 0; H[7] = (H[7] + h) >>> 0;
+      }
+      return H.map(function (x) { return ('00000000' + x.toString(16)).slice(-8); }).join('');
+    },
+    async hash(str) {
+      // Предпочитаем WebCrypto, fallback — pure JS (file:// и старые браузеры)
+      try {
+        if (typeof crypto !== 'undefined' && crypto.subtle && window.isSecureContext !== false) {
+          var data = new TextEncoder().encode(String(str || ''));
+          var buf = await crypto.subtle.digest('SHA-256', data);
+          var hex = Array.from(new Uint8Array(buf)).map(function (b) {
+            return b.toString(16).padStart(2, '0');
+          }).join('');
+          return 'sha256:' + hex;
+        }
+      } catch (e) { /* fall through */ }
+      return 'sha256:' + this._sha256sync(str);
+    },
+    isLegacyHash(h) {
+      return typeof h === 'string' && h.indexOf('sha256:') !== 0;
+    },
+    async verifyPassword(password, storedHash) {
+      if (!storedHash) return false;
+      try {
+        var fresh = await this.hash(password || '');
+        if (storedHash === fresh) return true;
+        if (this.isLegacyHash(storedHash)) {
+          var h = 0;
+          var s = String(password || '');
+          for (var i = 0; i < s.length; i++) {
+            h = ((h << 5) - h) + s.charCodeAt(i);
+            h |= 0;
+          }
+          var legacy = 'h' + Math.abs(h).toString(16) + '_' + btoa(unescape(encodeURIComponent(s))).slice(0, 12);
+          return storedHash === legacy;
+        }
+        return false;
+      } catch (e) {
+        console.error('[verifyPassword]', e);
+        return false;
+      }
+    },
+    normalizeLogin(login) {
+      return (login || '').trim().toLowerCase();
+    },
+    /**
+     * Ключ для сравнения логинов. Телефон приводится к 11 цифрам,
+     * поэтому «89991234567», «+7 999 123-45-67» и «79991234567» — один аккаунт.
+     * Email сравнивается как есть, в нижнем регистре.
+     */
+    loginKey(login) {
+      var s = this.normalizeLogin(login);
+      if (!s) return '';
+      if (/[a-zа-я@]/i.test(s)) return s;          // это email или имя
+      var d = s.replace(/\D/g, '');
+      if (!d) return s;
+      if (d.charAt(0) === '8') d = '7' + d.slice(1);
+      if (d.length === 10) d = '7' + d;
+      return d;
+    },
+    async registerLocal(name, login, password) {
+      name = (name || '').trim();
+      login = this.normalizeLogin(login);
+      password = password || '';
+      if (!name) return { ok: false, error: 'Укажите имя' };
+      if (!login) return { ok: false, error: 'Укажите телефон или email' };
+      if (password.length < 4) return { ok: false, error: 'Пароль от 4 символов' };
+      var db = this.loadUsers();
+      var key = this.loginKey(login);
+      var self = this;
+      if (db.users.some(function (u) { return self.loginKey(u.login) === key; })) {
+        return { ok: false, error: 'Такой логин уже зарегистрирован' };
+      }
+      var user = {
+        id: Domain.uid(),
+        name: name,
+        login: login,
+        passHash: await this.hash(password),
+        yandexId: null,
+        createdAt: new Date().toISOString()
+      };
+      db.users.push(user);
+      db.sessionId = user.id;
+      this.saveUsers(db);
+      return { ok: true, user: user };
+    },
+    async loginLocal(login, password) {
+      login = this.normalizeLogin(login);
+      password = password || '';
+      if (!login) return { ok: false, error: 'Введите телефон или email' };
+      if (!password) return { ok: false, error: 'Введите пароль' };
+      var db = this.loadUsers();
+      var key = this.loginKey(login);
+      var self = this;
+      var user = db.users.find(function (u) { return self.loginKey(u.login) === key; });
+      if (!user) {
+        return {
+          ok: false,
+          error: 'Аккаунт не найден на этом устройстве. Локальный вход работает только там, где вы регистрировались. Для доступа с любого устройства войдите через Яндекс ID.'
+        };
+      }
+      if (!user.passHash) return { ok: false, error: 'Этот аккаунт привязан к Яндекс ID — нажмите «Войти через Яндекс ID»' };
+      var ok = await this.verifyPassword(password, user.passHash);
+      if (!ok) return { ok: false, error: 'Неверный пароль' };
+      if (this.isLegacyHash(user.passHash)) {
+        user.passHash = await this.hash(password);
+        this.saveUsers(db);
+      }
+      db.sessionId = user.id;
+      this.saveUsers(db);
+      return { ok: true, user: user };
+    },
+    logout() {
+      var db = this.loadUsers();
+      db.sessionId = null;
+      this.saveUsers(db);
+      this.clearYandexToken();
+      State.currentUser = null;
+      State.clients = [];
+      State.classes = [];
+      State.clubMembers = [];
+      State.clubGroups = [];
+      State.settings = Object.assign({}, CONFIG.DEFAULT_SETTINGS);
+    },
+    getSessionUser() {
+      var db = this.loadUsers();
+      if (!db.sessionId) return null;
+      return db.users.find(function (u) { return u.id === db.sessionId; }) || null;
+    },
+    updateProfile(partial) {
+      var db = this.loadUsers();
+      var user = db.users.find(function (u) { return u.id === (State.currentUser && State.currentUser.id); });
+      if (!user) return;
+      if (partial.name != null) user.name = partial.name;
+      if (partial.login != null) user.login = this.normalizeLogin(partial.login);
+      this.saveUsers(db);
+      State.currentUser = user;
+    },
+    getYandexClientId() {
+      var fromSettings = (State.settings && State.settings.yandexClientId) || '';
+      var fromConfig = CONFIG.YANDEX_CLIENT_ID || '';
+      var fromGlobal = '';
+      try { fromGlobal = localStorage.getItem('dance_trainer_yandex_client_id') || ''; } catch (e) {}
+      return (fromSettings || fromGlobal || fromConfig || '').trim();
+    },
+    saveYandexClientId(id) {
+      id = (id || '').trim();
+      try { localStorage.setItem('dance_trainer_yandex_client_id', id); } catch (e) {}
+      if (State.settings) {
+        State.settings.yandexClientId = id;
+        // если уже вошли — сохраним и в данных пользователя
+        try { State.persist(); } catch (e) {}
+      }
+      return id;
+    },
+    /** Нативная Android-обёртка (WebView + JavascriptInterface) */
+    isNativeBridge() {
+      try {
+        return !!(window.AndroidBridge && window.AndroidBridge.startYandexAuth);
+      } catch (e) { return false; }
+    },
+    /** Capacitor / native? */
+    isNativeApp() {
+      try {
+        return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+      } catch (e) { return false; }
+    },
+    /** Redirect URI: в APK — deep link, на сайте — текущий URL */
+    getOAuthRedirectUri() {
+      if (this.isNativeBridge()) {
+        try { return window.AndroidBridge.redirectUri(); } catch (e) { return 'dancetrainer://oauth'; }
+      }
+      if (this.isNativeApp()) {
+        // Кастомная схема → Android вернёт в приложение, а не в Chrome/localhost
+        return 'dancetrainer://oauth';
+      }
+      var path = window.location.pathname || '/';
+      return window.location.origin + path;
+    },
+    /** Реальный OAuth Яндекс (implicit flow для SPA) + доступ к папке приложения на Диске */
+    startYandexOAuth() {
+      var clientId = this.getYandexClientId();
+      if (!clientId) {
+        UI.showToast('ClientID не задан');
+        var setup = document.getElementById('authYandexSetup');
+        if (setup) setup.classList.remove('hidden');
+        var hint = document.getElementById('yandexHint') || document.getElementById('yandexHintInline');
+        if (hint) {
+          hint.innerHTML = 'Нужен ClientID приложения на <a href="https://oauth.yandex.ru/" target="_blank" rel="noopener">oauth.yandex.ru</a>.';
+        }
+        return;
+      }
+      var redirect = this.getOAuthRedirectUri();
+      if (window.location.protocol === 'file:' && !this.isNativeApp() && !this.isNativeBridge()) {
+        UI.showToast('Яндекс ID работает только по https:// (залейте на хостинг)');
+        return;
+      }
+      var state = Domain.uid();
+      try { sessionStorage.setItem('ya_oauth_state', state); } catch (e) {}
+      try { sessionStorage.setItem('ya_oauth_redirect', redirect); } catch (e) {}
+      // cloud_api:disk.app_folder — изолированная папка приложения для синхронизации данных
+      var scope = 'login:info login:email cloud_api:disk.app_folder';
+      var url = 'https://oauth.yandex.ru/authorize'
+        + '?response_type=token'
+        + '&client_id=' + encodeURIComponent(clientId)
+        + '&redirect_uri=' + encodeURIComponent(redirect)
+        + '&scope=' + encodeURIComponent(scope)
+        + '&state=' + encodeURIComponent(state);
+      if (this.isNativeBridge()) {
+        // Открываем авторизацию в отдельном нативном окне.
+        // Свой WebView никуда не уходит -> нечему белеть, состояние не теряется.
+        try { window.AndroidBridge.startYandexAuth(url); } catch (e) { UI.showToast('Не удалось открыть окно входа'); }
+        return;
+      }
+      window.location.href = url;
+    },
+    /** Разбор токена из произвольного URL (deep link или hash) */
+    parseTokenFromUrl(url) {
+      if (!url) return null;
+      var hash = '';
+      var hi = url.indexOf('#');
+      if (hi !== -1) hash = url.substring(hi + 1);
+      else {
+        var qi = url.indexOf('?');
+        if (qi !== -1) hash = url.substring(qi + 1);
+      }
+      if (hash.indexOf('access_token=') === -1) return null;
+      var params = {};
+      hash.split('&').forEach(function (pair) {
+        var kv = pair.split('=');
+        params[decodeURIComponent(kv[0])] = decodeURIComponent((kv[1] || '').replace(/\+/g, ' '));
+      });
+      return params.access_token || null;
+    },
+    /** Обработка возврата с oauth.yandex.ru (#access_token=...) */
+    async handleYandexRedirect() {
+      var hash = window.location.hash || '';
+      if (hash.indexOf('access_token=') === -1) return false;
+      var params = {};
+      hash.replace(/^#/, '').split('&').forEach(function (pair) {
+        var kv = pair.split('=');
+        params[decodeURIComponent(kv[0])] = decodeURIComponent(kv[1] || '');
+      });
+      if (history.replaceState) {
+        history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
+      var token = params.access_token;
+      if (!token) return false;
+      try {
+        // Сохраняем токен для Disk API (синхронизация)
+        try {
+          localStorage.setItem('dance_trainer_ya_token', token);
+          if (params.expires_in) {
+            localStorage.setItem('dance_trainer_ya_token_exp', String(Date.now() + parseInt(params.expires_in, 10) * 1000));
+          }
+        } catch (e) {}
+        var res = await fetch('https://login.yandex.ru/info?format=json', {
+          headers: { Authorization: 'OAuth ' + token }
+        });
+        if (!res.ok) throw new Error('Yandex info failed');
+        var info = await res.json();
+        var yandexId = String(info.id);
+        var name = info.display_name || info.real_name || info.login || 'Яндекс';
+        var login = (info.default_email || info.login || ('ya_' + yandexId)).toLowerCase();
+        var db = this.loadUsers();
+        var user = db.users.find(function (u) { return u.yandexId === yandexId; });
+        if (!user) {
+          user = {
+            id: Domain.uid(),
+            name: name,
+            login: login,
+            passHash: null,
+            yandexId: yandexId,
+            createdAt: new Date().toISOString()
+          };
+          db.users.push(user);
+        } else {
+          user.name = name;
+          user.login = login;
+        }
+        db.sessionId = user.id;
+        this.saveUsers(db);
+        return user;
+      } catch (err) {
+        console.error(err);
+        UI.showToast('Не удалось войти через Яндекс');
+        return null;
+      }
+    },
+    getYandexToken() {
+      try {
+        var t = localStorage.getItem('dance_trainer_ya_token');
+        var exp = localStorage.getItem('dance_trainer_ya_token_exp');
+        if (!t) return null;
+        if (exp && Date.now() > parseInt(exp, 10)) {
+          localStorage.removeItem('dance_trainer_ya_token');
+          localStorage.removeItem('dance_trainer_ya_token_exp');
+          return null;
+        }
+        return t;
+      } catch (e) { return null; }
+    },
+    clearYandexToken() {
+      try {
+        localStorage.removeItem('dance_trainer_ya_token');
+        localStorage.removeItem('dance_trainer_ya_token_exp');
+      } catch (e) {}
+    }
+  };
+
+  /* =========================================================
+   * 4c. CLOUD — синхронизация через Яндекс.Диск (папка приложения)
+   * ========================================================= */
+  const Cloud = {
+    PATH: 'app:/dance-trainer-data.json',
+    _syncing: false,
+    _lastPush: 0,
+
+    canSync() {
+      return !!(State.currentUser && State.currentUser.yandexId && Auth.getYandexToken());
+    },
+
+    /**
+     * Диагностика: возвращает текст с точной причиной, почему синхронизация
+     * не работает. Нужна потому, что обычные ошибки Диска молча гасятся.
+     */
+    async diagnose() {
+      var lines = [];
+      var user = State.currentUser;
+      lines.push('Аккаунт: ' + (user ? (user.login || user.name || user.id) : 'нет'));
+      lines.push('Тип входа: ' + (user && user.yandexId ? 'Яндекс ID' : 'локальный (пароль)'));
+
+      var token = Auth.getYandexToken();
+      lines.push('Токен Яндекса: ' + (token ? 'есть' : 'НЕТ — войдите через Яндекс ID'));
+      if (!token) return lines.join('\n');
+
+      // Проверяем, выдан ли токен с правом на папку приложения
+      try {
+        var res = await fetch('https://cloud-api.yandex.net/v1/disk/resources?path=' +
+          encodeURIComponent('app:/') + '&limit=1', {
+          headers: { Authorization: 'OAuth ' + token }
+        });
+        if (res.status === 403) {
+          lines.push('Доступ к Диску: ЗАПРЕЩЁН (403).');
+          lines.push('Причина: у приложения на oauth.yandex.ru не включено право');
+          lines.push('«Доступ к папке приложения на Диске» (cloud_api:disk.app_folder),');
+          lines.push('либо токен выдан до его включения — выйдите и войдите заново.');
+        } else if (res.status === 401) {
+          lines.push('Доступ к Диску: токен недействителен (401) — войдите заново.');
+        } else if (res.ok || res.status === 404) {
+          lines.push('Доступ к Диску: ОК');
+          var file = await fetch('https://cloud-api.yandex.net/v1/disk/resources?path=' +
+            encodeURIComponent(this.PATH), { headers: { Authorization: 'OAuth ' + token } });
+          if (file.status === 404) {
+            lines.push('Файл данных в облаке: пока нет (будет создан при первом сохранении)');
+          } else if (file.ok) {
+            var meta = await file.json();
+            lines.push('Файл данных в облаке: есть, изменён ' +
+              new Date(meta.modified).toLocaleString('ru-RU'));
+            lines.push('Размер: ' + (meta.size || 0) + ' байт');
+          } else {
+            lines.push('Файл данных в облаке: ошибка ' + file.status);
+          }
+        } else {
+          lines.push('Доступ к Диску: неожиданный ответ ' + res.status);
+        }
+      } catch (e) {
+        lines.push('Доступ к Диску: сеть недоступна (' + e.message + ')');
+      }
+      return lines.join('\n');
+    },
+
+    async _api(method, url, body, isBinary) {
+      var token = Auth.getYandexToken();
+      if (!token) throw new Error('Нет токена Яндекс');
+      var opts = {
+        method: method,
+        headers: { Authorization: 'OAuth ' + token }
+      };
+      if (body != null && !isBinary) {
+        opts.headers['Content-Type'] = 'application/json';
+        opts.body = typeof body === 'string' ? body : JSON.stringify(body);
+      } else if (body != null && isBinary) {
+        opts.body = body;
+      }
+      var res = await fetch(url, opts);
+      return res;
+    },
+
+    /** Скачать данные с Диска (null если файла нет) */
+    async pull() {
+      if (!this.canSync()) return null;
+      try {
+        var meta = await this._api('GET',
+          'https://cloud-api.yandex.net/v1/disk/resources/download?path=' + encodeURIComponent(this.PATH));
+        if (meta.status === 404) return null;
+        if (!meta.ok) {
+          var errText = await meta.text();
+          console.warn('[Cloud.pull] meta', meta.status, errText);
+          if (meta.status === 401 || meta.status === 403) {
+            Auth.clearYandexToken();
+            UI.showToast('Сессия Яндекс истекла — войдите снова');
+            return null;
+          }
+          return null;
+        }
+        var info = await meta.json();
+        if (!info.href) return null;
+        var fileRes = await fetch(info.href);
+        if (!fileRes.ok) return null;
+        var data = await fileRes.json();
+        return data;
+      } catch (e) {
+        console.error('[Cloud.pull]', e);
+        return null;
+      }
+    },
+
+    /** Загрузить текущие данные на Диск */
+    async push() {
+      if (!this.canSync()) return false;
+      if (this._syncing) return false;
+      this._syncing = true;
+      try {
+        var payload = {
+          clients: State.clients,
+          classes: State.classes,
+          clubMembers: State.clubMembers,
+          clubGroups: State.clubGroups,
+          settings: State.settings,
+          updatedAt: new Date().toISOString(),
+          userId: State.currentUser && State.currentUser.id
+        };
+        var body = JSON.stringify(payload);
+        // Получить URL для загрузки
+        var up = await this._api('GET',
+          'https://cloud-api.yandex.net/v1/disk/resources/upload?path=' + encodeURIComponent(this.PATH) + '&overwrite=true');
+        if (up.status === 401 || up.status === 403) {
+          Auth.clearYandexToken();
+          UI.showToast('Сессия Яндекс истекла — войдите снова для синхронизации');
+          return false;
+        }
+        if (!up.ok) {
+          console.warn('[Cloud.push] upload href', up.status, await up.text());
+          return false;
+        }
+        var upInfo = await up.json();
+        if (!upInfo.href) return false;
+        var put = await fetch(upInfo.href, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: body
+        });
+        if (!put.ok) {
+          console.warn('[Cloud.push] put', put.status);
+          return false;
+        }
+        this._lastPush = Date.now();
+        return true;
+      } catch (e) {
+        console.error('[Cloud.push]', e);
+        return false;
+      } finally {
+        this._syncing = false;
+      }
+    },
+
+    /** После логина: подтянуть облако и слить с локальными данными */
+    async syncOnLogin() {
+      if (!this.canSync()) return { ok: false, reason: 'no-token' };
+      UI.showToast('Синхронизация с Яндекс.Диском…');
+      var remote = await this.pull();
+      if (!remote) {
+        // Файла ещё нет — заливаем локальные данные
+        var ok = await this.push();
+        return { ok: ok, reason: ok ? 'uploaded-local' : 'push-failed' };
+      }
+      // Берём облачную копию как источник истины (кросс-девайс)
+      if (Array.isArray(remote.clients)) State.clients = remote.clients;
+      if (Array.isArray(remote.classes)) State.classes = remote.classes;
+      if (Array.isArray(remote.clubMembers)) State.clubMembers = remote.clubMembers;
+      if (Array.isArray(remote.clubGroups)) State.clubGroups = remote.clubGroups;
+      if (remote.settings && typeof remote.settings === 'object') {
+        State.settings = Object.assign({}, CONFIG.DEFAULT_SETTINGS, remote.settings);
+      }
+      State.persist();
+      try { Services.syncAllGroupClasses(); } catch (e) {}
+      return { ok: true, reason: 'pulled', updatedAt: remote.updatedAt };
+    },
+
+    /** Отложенный push после изменений (не чаще раза в 2 сек) */
+    schedulePush() {
+      if (!this.canSync()) return;
+      clearTimeout(this._pushTimer);
+      this._pushTimer = setTimeout(function () {
+        Cloud.push().then(function (ok) {
+          if (ok) {
+            var el = document.getElementById('syncStatus');
+            if (el) el.textContent = '☁ Синхронизировано ' + new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+          }
+        });
+      }, 1500);
+    }
+  };
+
+  /* =========================================================
+   * 5. SERVICES
+   * ========================================================= */
+  const Services = {
+    createClient(data) {
+      var client = {
+        id: Domain.uid(), name: data.name.trim(), phone: (data.phone || '').trim(),
+        notes: (data.notes || '').trim(), abonement: null, createdAt: new Date().toISOString()
+      };
+      State.clients.push(client);
+      State.persist();
+      return client;
+    },
+    updateClient(id, data) {
+      var c = State.clients.find(function (x) { return x.id === id; });
+      if (!c) return null;
+      c.name = data.name.trim();
+      c.phone = (data.phone || '').trim();
+      c.notes = (data.notes || '').trim();
+      State.persist();
+      return c;
+    },
+    deleteClient(id) {
+      State.clients = State.clients.filter(function (c) { return c.id !== id; });
+      State.persist();
+    },
+    /** Добавить/пополнить абонемент: 4, 6 или 8 занятий */
+    addAbonement(clientId, sessions) {
+      var c = State.clients.find(function (x) { return x.id === clientId; });
+      if (!c) return null;
+      sessions = parseInt(sessions, 10);
+      if ([4, 6, 8].indexOf(sessions) < 0) return null;
+      var prevRem = (c.abonement && c.abonement.remaining > 0) ? c.abonement.remaining : 0;
+      var prevTotal = (c.abonement && c.abonement.total > 0) ? c.abonement.total : 0;
+      var debits = (c.abonement && c.abonement.debits) ? Object.assign({}, c.abonement.debits) : {};
+      c.abonement = {
+        total: prevTotal + sessions,
+        remaining: prevRem + sessions,
+        packSize: sessions,
+        debits: debits
+      };
+      // Сразу применить к уже существующим занятиям «Группа», где этот клиент в списке
+      Services.syncClientAbonementAcrossClasses(clientId);
+      State.persist();
+      return c;
+    },
+    /** Пройти все групповые занятия и списать/вернуть абонемент клиента */
+    syncClientAbonementAcrossClasses(clientId) {
+      State.classes.forEach(function (cls) {
+        if (!Domain.isGroupClass(cls)) return;
+        if ((cls.clientIds || []).indexOf(clientId) < 0) return;
+        Services.syncAbonementsForClass(cls, cls.clientIds || []);
+      });
+    },
+    /** Полная синхронизация всех групповых занятий (после загрузки / починка) */
+    syncAllGroupClasses() {
+      State.classes.forEach(function (cls) {
+        if (!Domain.isGroupClass(cls)) return;
+        Services.syncAbonementsForClass(cls, cls.clientIds || []);
+      });
+      State.persist();
+    },
+    clearAbonement(clientId) {
+      var c = State.clients.find(function (x) { return x.id === clientId; });
+      if (!c) return;
+      c.abonement = null;
+      State.persist();
+    },
+    /** Списать 1 занятие абонемента за classId (если ещё не списано) */
+    debitAbonement(clientId, classId) {
+      var c = State.clients.find(function (x) { return x.id === clientId; });
+      if (!c || !c.abonement) return false;
+      if (!c.abonement.debits) c.abonement.debits = {};
+      if (c.abonement.debits[classId]) return false; // уже списано
+      if (c.abonement.remaining <= 0) return false;
+      c.abonement.remaining -= 1;
+      c.abonement.debits[classId] = true;
+      return true;
+    },
+    /** Вернуть занятие в абонемент при удалении из группы */
+    restoreAbonement(clientId, classId) {
+      var c = State.clients.find(function (x) { return x.id === clientId; });
+      if (!c || !c.abonement) return false;
+      if (!c.abonement.debits) c.abonement.debits = {};
+      if (!c.abonement.debits[classId]) return false;
+      delete c.abonement.debits[classId];
+      c.abonement.remaining += 1;
+      return true;
+    },
+    /**
+     * Синхронизация абонементов с занятием:
+     * — если это «Группа»: списать и отметить оплату
+     * — если убрали из группы / сменили название: вернуть
+     */
+    syncAbonementsForClass(cls, previousClientIds) {
+      if (!cls) return;
+      // isGroup никогда не меняем здесь — только списания
+      var isGroup = Domain.isGroupClass(cls);
+      var currentIds = cls.clientIds || [];
+      if (!cls.payments) cls.payments = {};
+
+      // 1) Вернуть списание, только если занятие больше НЕ группа или клиента убрали из списка
+      State.clients.forEach(function (c) {
+        if (!c.abonement || !c.abonement.debits || !c.abonement.debits[cls.id]) return;
+        var stillIn = currentIds.indexOf(c.id) >= 0;
+        if (!isGroup || !stillIn) {
+          Services.restoreAbonement(c.id, cls.id);
+          if (!stillIn) cls.payments[c.id] = false;
+          else if (!isGroup) cls.payments[c.id] = false;
+        }
+      });
+
+      if (!isGroup) return;
+
+      // 2) Списать только у тех, у кого remaining > 0.
+      //    У кого абонемент закончился — остаются обычными клиентами (без авто-оплаты).
+      currentIds.forEach(function (cid) {
+        var c = State.clients.find(function (x) { return x.id === cid; });
+        if (!c || !c.abonement) return;
+        if (c.abonement.debits && c.abonement.debits[cls.id]) {
+          cls.payments[cid] = true;
+          return;
+        }
+        if ((c.abonement.remaining || 0) > 0) {
+          var ok = Services.debitAbonement(cid, cls.id);
+          if (ok) cls.payments[cid] = true;
+        }
+        // remaining <= 0: ничего не делаем — клиент в списке, isGroup не трогаем, оплата ручная
+      });
+    },
+    clientExists(name, phone) {
+      return State.clients.some(function (c) {
+        var sameName = c.name.toLowerCase() === name.toLowerCase();
+        var samePhone = phone && c.phone && Domain.normalizePhone(c.phone) === Domain.normalizePhone(phone);
+        return sameName || samePhone;
+      });
+    },
+    createClass(data) {
+      var payments = {};
+      (data.clientIds || []).forEach(function (id) { payments[id] = false; });
+      var isGroup = data.isGroup === true || (data.isGroup == null && Domain.isGroupClassTitle(data.title));
+      var cls = {
+        id: Domain.uid(), title: (data.title || '').trim(), date: data.date, time: data.time,
+        duration: data.duration || 60, notes: (data.notes || '').trim(),
+        clientIds: data.clientIds || [], payments: payments,
+        isGroup: !!isGroup,
+        clubGroupId: data.clubGroupId || null,
+        createdAt: new Date().toISOString()
+      };
+      State.classes.push(cls);
+      Services.syncAbonementsForClass(cls, []);
+      State.persist();
+      return cls;
+    },
+    updateClass(id, data) {
+      var cls = State.classes.find(function (x) { return x.id === id; });
+      if (!cls) return null;
+      var prevIds = (cls.clientIds || []).slice();
+      var payments = {};
+      (data.clientIds || []).forEach(function (cid) {
+        payments[cid] = !!(cls.payments && cls.payments[cid]);
+      });
+      cls.title = (data.title || '').trim();
+      cls.date = data.date;
+      cls.time = data.time;
+      cls.duration = data.duration || 60;
+      cls.notes = (data.notes || '').trim();
+      cls.clientIds = data.clientIds || [];
+      cls.payments = payments;
+      cls.clubGroupId = data.clubGroupId || null;
+      // Явно сохраняем выбор пользователя; не сбрасываем группу «само»
+      if (typeof data.isGroup === 'boolean') {
+        cls.isGroup = data.isGroup;
+      } else if (cls.isGroup == null) {
+        cls.isGroup = Domain.isGroupClassTitle(cls.title);
+      }
+      // если уже true — оставляем true даже при странных data
+      Services.syncAbonementsForClass(cls, prevIds);
+      State.persist();
+      return cls;
+    },
+    deleteClass(id) {
+      var cls = State.classes.find(function (c) { return c.id === id; });
+      if (cls) {
+        // вернуть все списания абонементов
+        State.clients.forEach(function (c) {
+          if (c.abonement && c.abonement.debits && c.abonement.debits[id]) {
+            Services.restoreAbonement(c.id, id);
+          }
+        });
+      }
+      State.classes = State.classes.filter(function (c) { return c.id !== id; });
+      State.persist();
+    },
+    setPayment(classId, clientId, paid) {
+      var cls = State.classes.find(function (x) { return x.id === classId; });
+      if (!cls) return;
+      if (!cls.payments) cls.payments = {};
+      cls.payments[clientId] = !!paid;
+      State.persist();
+    },
+    clearDay(dateStr) {
+      State.classes.filter(function (c) { return c.date === dateStr; }).forEach(function (cls) {
+        State.clients.forEach(function (c) {
+          if (c.abonement && c.abonement.debits && c.abonement.debits[cls.id]) {
+            Services.restoreAbonement(c.id, cls.id);
+          }
+        });
+      });
+      State.classes = State.classes.filter(function (c) { return c.date !== dateStr; });
+      State.persist();
+    },
+    copyPreviousWeek(weekStart) {
+      var prevMon = Domain.addDays(weekStart, -7);
+      var prevSun = Domain.addDays(prevMon, 6);
+      var prev = State.classes.filter(function (c) {
+        var d = new Date(c.date + 'T12:00:00');
+        return d >= prevMon && d <= prevSun;
+      });
+      var copied = 0, skipped = 0;
+      prev.forEach(function (cls) {
+        var newDate = Domain.formatDate(Domain.addDays(new Date(cls.date + 'T12:00:00'), 7));
+        var overlaps = Domain.findOverlaps(State.classes, newDate, cls.time, cls.duration || 60, null);
+        if (overlaps.length) {
+          skipped++;
+          return;
+        }
+        var payments = {};
+        (cls.clientIds || []).forEach(function (id) { payments[id] = false; });
+        // Клонируем занятие целиком, чтобы не терять поля (clubGroupId и любые
+        // новые, которые появятся позже). Меняем только то, что должно отличаться.
+        var copy = JSON.parse(JSON.stringify(cls));
+        copy.id = Domain.uid();
+        copy.date = newDate;
+        copy.clientIds = (cls.clientIds || []).slice();
+        copy.payments = payments;          // оплаты не переносим
+        copy.isGroup = Domain.isGroupClass(cls);
+        copy.clubGroupId = cls.clubGroupId || null;
+        copy.duration = cls.duration || 60;
+        copy.createdAt = new Date().toISOString();
+        State.classes.push(copy);
+        Services.syncAbonementsForClass(copy, []);
+        copied++;
+      });
+      State.persist();
+      return { copied: copied, skipped: skipped, total: prev.length };
+    },
+    updateSettings(partial) {
+      Object.assign(State.settings, partial);
+      State.persist();
+    },
+    getStats() {
+      var now = new Date();
+      var weekStart = Domain.getMonday(now);
+      var weekEnd = Domain.addDays(weekStart, 6);
+      var monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      var monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      return {
+        clients: State.clients.length,
+        total: State.classes.length,
+        week: State.classes.filter(function (c) {
+          var d = new Date(c.date + 'T12:00:00');
+          return d >= weekStart && d <= weekEnd;
+        }).length,
+        month: State.classes.filter(function (c) {
+          var d = new Date(c.date + 'T12:00:00');
+          return d >= monthStart && d <= monthEnd;
+        }).length
+      };
+    },
+    exportJson() {
+      return JSON.stringify({
+        clients: State.clients, classes: State.classes,
+        clubMembers: State.clubMembers, clubGroups: State.clubGroups,
+        settings: State.settings
+      }, null, 2);
+    },
+    importJson(raw) {
+      var data = JSON.parse(raw);
+      if (!data || typeof data !== 'object') throw new Error('Неверный формат');
+      if (data.clients !== undefined && !Array.isArray(data.clients)) throw new Error('clients должен быть массивом');
+      if (data.classes !== undefined && !Array.isArray(data.classes)) throw new Error('classes должен быть массивом');
+      if (data.settings !== undefined && (typeof data.settings !== 'object' || data.settings === null || Array.isArray(data.settings))) {
+        throw new Error('settings должен быть объектом');
+      }
+      if (data.clients) {
+        State.clients = data.clients.filter(function (c) {
+          return c && typeof c === 'object' && c.id && c.name;
+        });
+      }
+      if (data.classes) {
+        State.classes = data.classes.filter(function (c) {
+          return c && typeof c === 'object' && c.id && c.date && c.time;
+        });
+      }
+      if (Array.isArray(data.clubMembers)) {
+        State.clubMembers = data.clubMembers.filter(function (c) {
+          return c && typeof c === 'object' && c.id && c.name;
+        });
+      }
+      if (Array.isArray(data.clubGroups)) {
+        State.clubGroups = data.clubGroups.filter(function (g) {
+          return g && typeof g === 'object' && g.id && g.name;
+        });
+      }
+      if (data.settings) State.settings = Object.assign({}, CONFIG.DEFAULT_SETTINGS, data.settings);
+      try { Services.syncAllGroupClasses(); } catch (e) { console.error(e); }
+      State.persist();
+    },
+
+    /* —— Клуб —— */
+    createClubMember(data) {
+      var m = {
+        id: Domain.uid(),
+        name: (data.name || '').trim(),
+        phone: (data.phone || '').trim(),
+        notes: (data.notes || '').trim(),
+        discount: 0,
+        createdAt: new Date().toISOString()
+      };
+      State.clubMembers.push(m);
+      State.persist();
+      return m;
+    },
+    updateClubMember(id, data) {
+      var m = State.clubMembers.find(function (x) { return x.id === id; });
+      if (!m) return null;
+      if (data.name !== undefined) m.name = String(data.name).trim();
+      if (data.phone !== undefined) m.phone = String(data.phone).trim();
+      if (data.notes !== undefined) m.notes = String(data.notes).trim();
+      if (data.discount !== undefined) m.discount = Math.max(0, parseInt(data.discount, 10) || 0);
+      State.persist();
+      return m;
+    },
+    deleteClubMember(id) {
+      State.clubMembers = State.clubMembers.filter(function (m) { return m.id !== id; });
+      State.clubGroups.forEach(function (g) {
+        g.memberIds = (g.memberIds || []).filter(function (mid) { return mid !== id; });
+        if (g.payments) delete g.payments[id];
+      });
+      State.persist();
+    },
+    setClubMemberDiscount(id, amount) {
+      return Services.updateClubMember(id, { discount: amount });
+    },
+    createClubGroup(data) {
+      var payments = {};
+      (data.memberIds || []).forEach(function (id) { payments[id] = false; });
+      var g = {
+        id: Domain.uid(),
+        name: (data.name || '').trim(),
+        notes: (data.notes || '').trim(),
+        fee: Math.max(0, parseInt(data.fee, 10) || 0),
+        memberIds: (data.memberIds || []).slice(),
+        payments: payments,
+        createdAt: new Date().toISOString()
+      };
+      State.clubGroups.push(g);
+      State.persist();
+      return g;
+    },
+    updateClubGroup(id, data) {
+      var g = State.clubGroups.find(function (x) { return x.id === id; });
+      if (!g) return null;
+      var prevPay = g.payments || {};
+      g.name = (data.name || '').trim();
+      g.notes = (data.notes || '').trim();
+      g.fee = Math.max(0, parseInt(data.fee, 10) || 0);
+      g.memberIds = (data.memberIds || []).slice();
+      var payments = {};
+      g.memberIds.forEach(function (mid) {
+        payments[mid] = !!(prevPay[mid]);
+      });
+      g.payments = payments;
+      State.persist();
+      return g;
+    },
+    deleteClubGroup(id) {
+      State.clubGroups = State.clubGroups.filter(function (g) { return g.id !== id; });
+      State.persist();
+    },
+    setClubGroupPayment(groupId, memberId, paid) {
+      var g = State.clubGroups.find(function (x) { return x.id === groupId; });
+      if (!g) return;
+      if (!g.payments) g.payments = {};
+      g.payments[memberId] = !!paid;
+      State.persist();
+    },
+    /** Сумма к оплате участника в группе с учётом скидки */
+    clubMemberDue(group, member) {
+      var fee = (group && group.fee) || 0;
+      var disc = (member && member.discount) || 0;
+      return Math.max(0, fee - disc);
+    },
+    clubGroupStats(group) {
+      var members = (group.memberIds || []).map(function (id) {
+        return State.clubMembers.find(function (m) { return m.id === id; });
+      }).filter(Boolean);
+      var paid = 0, totalMoney = 0, collected = 0;
+      members.forEach(function (m) {
+        var due = Services.clubMemberDue(group, m);
+        totalMoney += due;
+        if (group.payments && group.payments[m.id]) {
+          paid++;
+          collected += due;
+        }
+      });
+      return { count: members.length, paid: paid, totalMoney: totalMoney, collected: collected };
+    },
+    clubOverallStats() {
+      var paid = 0, count = 0, collected = 0, totalMoney = 0;
+      State.clubGroups.forEach(function (g) {
+        var s = Services.clubGroupStats(g);
+        paid += s.paid;
+        count += s.count;
+        collected += s.collected;
+        totalMoney += s.totalMoney;
+      });
+      return {
+        groups: State.clubGroups.length,
+        members: State.clubMembers.length,
+        paid: paid,
+        count: count,
+        collected: collected,
+        totalMoney: totalMoney
+      };
+    }
+  };
+
+  /* =========================================================
+   * 6. UI
+   * ========================================================= */
+  const UI = {
+    $(id) { return document.getElementById(id); },
+    showToast(msg) {
+      var t = this.$('toast');
+      if (!t) return;
+      t.textContent = msg;
+      t.classList.add('show');
+      setTimeout(function () { t.classList.remove('show'); }, 2500);
+    },
+    updateContactsStatus() {
+      var hasNative = !!(window.AndroidContacts && window.AndroidContacts.pickContact);
+      var hasPicker = ('contacts' in navigator && 'ContactsManager' in window);
+      var access = (State.settings && State.settings.contactsAccess) || '';
+      var msg;
+      if (hasNative) {
+        msg = 'Контакты телефона доступны — откроется системный выбор.';
+      } else if (hasPicker) {
+        if (access === 'denied') msg = 'Доступ к контактам запрещён. Разрешите в настройках Safari/Chrome → Контакты или импортируйте файл.';
+        else if (access === 'granted') msg = 'Системный выбор контактов доступен.';
+        else msg = 'Можно выбрать контакты из телефонной книги (браузер спросит разрешение).';
+      } else {
+        msg = 'Системный выбор недоступен на этом устройстве. Используйте импорт vCard/CSV или вставку списка имён.';
+      }
+      var a = this.$('contactsStatusHint');
+      var b = this.$('contactsSettingsStatus');
+      if (a) a.textContent = msg;
+      if (b) b.textContent = msg;
+    },
+    /** Колёсики времени как в будильнике */
+    initTimePicker() {
+      var hoursEl = this.$('timePickerHours');
+      var minsEl = this.$('timePickerMinutes');
+      if (!hoursEl || !minsEl || hoursEl.dataset.ready) return;
+      hoursEl.dataset.ready = '1';
+      var hHtml = '', mHtml = '';
+      // padding items for snap center
+      for (var p = 0; p < 2; p++) {
+        hHtml += '<div class="time-picker-item" data-pad="1">&nbsp;</div>';
+        mHtml += '<div class="time-picker-item" data-pad="1">&nbsp;</div>';
+      }
+      for (var h = 0; h < 24; h++) {
+        hHtml += '<div class="time-picker-item" data-h="' + h + '">' + String(h).padStart(2, '0') + '</div>';
+      }
+      for (var m = 0; m < 60; m += 15) {
+        mHtml += '<div class="time-picker-item" data-m="' + m + '">' + String(m).padStart(2, '0') + '</div>';
+      }
+      for (var p2 = 0; p2 < 2; p2++) {
+        hHtml += '<div class="time-picker-item" data-pad="1">&nbsp;</div>';
+        mHtml += '<div class="time-picker-item" data-pad="1">&nbsp;</div>';
+      }
+      hoursEl.innerHTML = hHtml;
+      minsEl.innerHTML = mHtml;
+
+      function syncFromScroll(col, kind) {
+        var items = col.querySelectorAll('.time-picker-item:not([data-pad])');
+        var colRect = col.getBoundingClientRect();
+        var mid = colRect.top + colRect.height / 2;
+        var best = null, bestDist = 1e9;
+        items.forEach(function (it) {
+          var r = it.getBoundingClientRect();
+          var d = Math.abs(r.top + r.height / 2 - mid);
+          if (d < bestDist) { bestDist = d; best = it; }
+        });
+        if (!best) return;
+        col.querySelectorAll('.time-picker-item').forEach(function (it) { it.classList.remove('active'); });
+        best.classList.add('active');
+        var cur = (UI.$('classTime').value || '18:00').split(':');
+        var hh = parseInt(cur[0], 10) || 0;
+        var mm = parseInt(cur[1], 10) || 0;
+        if (kind === 'h') hh = parseInt(best.dataset.h, 10);
+        else mm = parseInt(best.dataset.m, 10);
+        UI.$('classTime').value = String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0');
+      }
+
+      var hTimer, mTimer;
+      hoursEl.addEventListener('scroll', function () {
+        clearTimeout(hTimer);
+        hTimer = setTimeout(function () { syncFromScroll(hoursEl, 'h'); }, 80);
+      }, { passive: true });
+      minsEl.addEventListener('scroll', function () {
+        clearTimeout(mTimer);
+        mTimer = setTimeout(function () { syncFromScroll(minsEl, 'm'); }, 80);
+      }, { passive: true });
+
+      hoursEl.addEventListener('click', function (e) {
+        var it = e.target.closest('[data-h]');
+        if (!it) return;
+        it.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        setTimeout(function () { syncFromScroll(hoursEl, 'h'); }, 120);
+      });
+      minsEl.addEventListener('click', function (e) {
+        var it = e.target.closest('[data-m]');
+        if (!it) return;
+        it.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        setTimeout(function () { syncFromScroll(minsEl, 'm'); }, 120);
+      });
+    },
+    setTimePicker(timeStr) {
+      this.initTimePicker();
+      var parts = (timeStr || '18:00').split(':');
+      var hh = Math.max(0, Math.min(23, parseInt(parts[0], 10) || 0));
+      var mm = Math.max(0, Math.min(59, parseInt(parts[1], 10) || 0));
+      // шаг 15 минут
+      mm = Math.round(mm / 15) * 15;
+      if (mm >= 60) { mm = 0; hh = Math.min(23, hh + 1); }
+      this.$('classTime').value = String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0');
+      var hoursEl = this.$('timePickerHours');
+      var minsEl = this.$('timePickerMinutes');
+      if (!hoursEl || !minsEl) return;
+      var hItem = hoursEl.querySelector('[data-h="' + hh + '"]');
+      var mItem = minsEl.querySelector('[data-m="' + mm + '"]');
+      hoursEl.querySelectorAll('.time-picker-item').forEach(function (it) { it.classList.toggle('active', it === hItem); });
+      minsEl.querySelectorAll('.time-picker-item').forEach(function (it) { it.classList.toggle('active', it === mItem); });
+      // scroll after layout
+      setTimeout(function () {
+        if (hItem) hItem.scrollIntoView({ block: 'center' });
+        if (mItem) mItem.scrollIntoView({ block: 'center' });
+      }, 30);
+    },
+    openModal(id) { this.$(id).classList.add('show'); },
+    closeModal(id) { this.$(id).classList.remove('show'); },
+    applyTheme() {
+      var s = State.settings;
+      document.documentElement.setAttribute('data-theme', s.dark ? 'dark' : 'light');
+      var calStyle = s.calStyle || 'standard';
+      if (calStyle === 'compact') calStyle = 'standard';
+      document.documentElement.setAttribute('data-cal-style', calStyle);
+      document.documentElement.style.setProperty('--primary', s.primary);
+      document.documentElement.style.setProperty('--primary-dark', Domain.shadeColor(s.primary, -20));
+      document.documentElement.style.setProperty('--primary-light', s.dark ? Domain.shadeColor(s.primary, -55) : Domain.shadeColor(s.primary, 88));
+      var meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.content = s.primary;
+      this.$('appTitle').textContent = s.calendarName ? '💃 ' + s.calendarName : '💃 Танцевальный тренер';
+      var uname = (State.currentUser && State.currentUser.name) || s.profileName || '';
+      var ulogin = (State.currentUser && State.currentUser.login) || s.profilePhone || '';
+      this.$('appSubtitle').textContent = (uname ? (uname + (ulogin ? ' · ' + ulogin : '')) : 'Учёт клиентов и занятий') + ' · сб. ' + CONFIG.BUILD;
+      this.$('settingCalendarName').value = s.calendarName || '';
+      this.$('settingDark').checked = !!s.dark;
+      this.$('settingColor').value = s.primary || '#e11d48';
+      document.querySelectorAll('.style-option').forEach(function (el) {
+        el.classList.toggle('active', el.dataset.style === (s.calStyle || 'standard'));
+      });
+      this.renderColorPresets();
+      this.renderProfile();
+    },
+    renderColorPresets() {
+      this.$('colorPresets').innerHTML = CONFIG.COLOR_PRESETS.map(function (c) {
+        return '<div class="color-swatch ' + (c === State.settings.primary ? 'active' : '') + '" style="background:' + c + '" data-action="set-color" data-color="' + c + '"></div>';
+      }).join('');
+    },
+    /**
+     * Страховка для бабла суммы. CSS в WebView иногда проигрывает — например,
+     * если стиль не долетел из-за кэша. Инлайновый стиль с приоритетом
+     * important перебить нечем, поэтому размеры проставляем из кода.
+     */
+    lockMoneyBubbles() {
+      var nodes = document.querySelectorAll('.club-money-bubble');
+      for (var i = 0; i < nodes.length; i++) {
+        var s = nodes[i].style;
+        s.setProperty('display', 'inline-flex', 'important');
+        s.setProperty('align-items', 'center', 'important');
+        s.setProperty('justify-content', 'center', 'important');
+        s.setProperty('align-self', 'center', 'important');
+        s.setProperty('flex', '0 0 auto', 'important');
+        s.setProperty('width', 'auto', 'important');
+        s.setProperty('height', '28px', 'important');
+        s.setProperty('min-height', '28px', 'important');
+        s.setProperty('max-height', '28px', 'important');
+        s.setProperty('min-width', '72px', 'important');
+        s.setProperty('padding', '0 12px', 'important');
+        s.setProperty('border-radius', '14px', 'important');
+        s.setProperty('line-height', '28px', 'important');
+        s.setProperty('white-space', 'nowrap', 'important');
+        s.setProperty('box-sizing', 'border-box', 'important');
+        s.setProperty('aspect-ratio', 'auto', 'important');
+      }
+    },
+    renderProfile() {
+      var name = (State.currentUser && State.currentUser.name) || State.settings.profileName || 'Гость';
+      var login = (State.currentUser && State.currentUser.login) || State.settings.profilePhone || '';
+      var via = State.currentUser && State.currentUser.yandexId ? ' · Яндекс ID' : '';
+      this.$('profileName').textContent = name;
+      this.$('profilePhone').textContent = (login || 'Профиль') + via;
+      this.$('profileAvatar').textContent = (name || '?')[0].toUpperCase();
+    },
+    switchTab(tab) {
+      document.querySelectorAll('.nav-item').forEach(function (t) {
+        t.classList.toggle('active', t.dataset.tab === tab);
+      });
+      document.querySelectorAll('.section').forEach(function (s) {
+        s.classList.toggle('active', s.dataset.screen === tab);
+      });
+      var fab = this.$('fabMain');
+      if (fab) fab.classList.toggle('hidden', tab === 'settings');
+      if (tab === 'clients') this.renderClients();
+      if (tab === 'schedule') this.renderSchedule();
+      if (tab === 'club') this.renderClub();
+      if (tab === 'settings') {
+        this.applyTheme();
+        this.updateContactsStatus();
+        var el = document.getElementById('syncStatus');
+        if (el) {
+          if (Cloud.canSync()) el.textContent = '☁ Активна (Яндекс.Диск)';
+          else if (State.currentUser && State.currentUser.yandexId) el.textContent = 'Нужно войти через Яндекс снова (токен истёк)';
+          else el.textContent = 'Только локально — войдите через Яндекс ID для синхронизации';
+        }
+      }
+    },
+    renderSchedule() {
+      this.$('periodTitle').textContent = Domain.formatWeekRange(State.currentWeekStart);
+      var dayNames = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
+      var todayStr = Domain.formatDate(new Date());
+      var html = '';
+      for (var i = 0; i < 7; i++) {
+        var d = Domain.addDays(State.currentWeekStart, i);
+        var dateStr = Domain.formatDate(d);
+        var has = State.classes.some(function (c) { return c.date === dateStr; });
+        html += '<button type="button" class="day-btn ' + (dateStr === State.selectedDate ? 'active ' : '') + (has ? 'has-classes ' : '') + (dateStr === todayStr ? 'today' : '') + '" data-action="select-day" data-date="' + dateStr + '"><span class="day-name">' + dayNames[i] + '</span><span class="day-num">' + d.getDate() + '</span></button>';
+      }
+      this.$('weekDays').innerHTML = html;
+      this.$('selectedDayLabel').textContent = Domain.formatDisplayDate(State.selectedDate);
+      this.renderDayClasses();
+    },
+    renderDayClasses() {
+      var dayClasses = State.classes.filter(function (c) { return c.date === State.selectedDate; }).sort(function (a, b) { return a.time.localeCompare(b.time); });
+      var container = this.$('dayClasses');
+      var hourH = CONFIG.HOUR_HEIGHT || 96;
+      var startH = CONFIG.DAY_START_HOUR;
+      var endH = CONFIG.DAY_END_HOUR;
+      // Расширяем сетку под реальные занятия (в т.ч. вне 08–22)
+      dayClasses.forEach(function (cls) {
+        var s = Domain.timeToMinutes(cls.time);
+        var e = s + (cls.duration || 60);
+        var sh = Math.floor(s / 60);
+        var eh = Math.ceil(e / 60);
+        if (sh < startH) startH = Math.max(0, sh);
+        if (eh > endH) endH = Math.min(24, eh);
+      });
+      // если занятие доходит до 24:00 — последний слот 23
+      if (endH > 23) endH = 23;
+      var dayStartMin = startH * 60;
+      var gap = 3;
+      var gridH = (endH - startH + 1) * hourH;
+
+      var grid = '<div class="time-grid" style="height:' + gridH + 'px;overflow:visible;">';
+      for (var h = startH; h <= endH; h++) {
+        grid += '<div class="time-slot"><div class="time-label">' + String(h).padStart(2, '0') + ':00</div><div class="time-content"></div></div>';
+      }
+      grid += '<div class="time-events">';
+      dayClasses.forEach(function (cls) {
+        var startMin = Domain.timeToMinutes(cls.time);
+        var dur = cls.duration || 60;
+        var top = ((startMin - dayStartMin) / 60) * hourH;
+        var height = Math.max((dur / 60) * hourH - gap, 18);
+        if (top < 0) {
+          height += top;
+          top = 0;
+        }
+        grid += UI.renderClassCard(cls, top, height);
+      });
+      grid += '</div></div>';
+
+      if (!dayClasses.length) {
+        container.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-muted);font-size:0.85rem;">Нет занятий — нажмите «+»</div>' + grid;
+      } else {
+        container.innerHTML = grid;
+      }
+    },
+    renderClassCard(cls, top, height) {
+      var clients = (cls.clientIds || []).map(function (id) { return State.clients.find(function (c) { return c.id === id; }); }).filter(Boolean);
+      var paidCount = clients.filter(function (c) { return cls.payments && cls.payments[c.id]; }).length;
+      var status = Domain.classPaymentStatus(cls);
+      var startMin = Domain.timeToMinutes(cls.time);
+      var z = 2 + Math.floor(startMin / 15);
+
+      var clubG = cls.clubGroupId ? State.clubGroups.find(function (g) { return g.id === cls.clubGroupId; }) : null;
+      var namesHtml = clients.length
+        ? clients.map(function (c) {
+            var paid = cls.payments && cls.payments[c.id];
+            var abMark = '';
+            if (c.abonement && c.abonement.total > 0) {
+              var rem = Math.max(0, c.abonement.remaining || 0);
+              var tot = c.abonement.total;
+              var lvl = Domain.abonementLevel(rem, tot);
+              abMark = '<span class="name-abon ' + (lvl === 'ok' ? '' : lvl) + '">' + rem + '/' + tot + '</span>';
+            }
+            return '<span class="name-chip ' + (paid ? 'paid' : 'unpaid') + '">' + Domain.escapeHtml(c.name) + abMark + '</span>';
+          }).join('')
+        : (clubG
+            ? '<span class="name-chip paid" style="border-color:#93c5fd;background:#eff6ff;color:#1d4ed8;">🏆 ' + Domain.escapeHtml(clubG.name) + '</span>'
+            : '<span class="text-muted">Без клиентов</span>');
+      var titleHtml = cls.title ? '<div class="time-class-title">' + Domain.escapeHtml(cls.title) + '</div>' : '';
+      var notesHtml = cls.notes ? '<div class="time-class-notes">📝 ' + Domain.escapeHtml(cls.notes) + '</div>' : '';
+      var countHtml = clubG
+        ? '<span class="time-class-paid-count">Клуб</span>'
+        : (clients.length
+          ? '<span class="time-class-paid-count">' + (paidCount === clients.length ? '✓ ' + paidCount + '/' + clients.length : '✗ ' + paidCount + '/' + clients.length) + '</span>'
+          : '');
+
+      return '<div class="time-class ' + status + '" data-action="class-open" data-id="' + cls.id +
+        '" style="top:' + top + 'px;height:' + height + 'px;z-index:' + z + '">' +
+        titleHtml +
+        '<div class="time-class-head"><div class="time-class-time">' + Domain.formatTimeRange(cls.time, cls.duration || 60) + '</div>' + countHtml + '</div>' +
+        '<div class="time-class-clients">' + namesHtml + '</div>' +
+        notesHtml + '</div>';
+    },
+    renderClients() {
+      var search = (this.$('clientSearch').value || '').toLowerCase().trim();
+      var clients = State.clients.slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); });
+      if (search) {
+        clients = clients.filter(function (c) {
+          return c.name.toLowerCase().includes(search) ||
+            (c.phone || '').toLowerCase().includes(search) ||
+            (c.notes || '').toLowerCase().includes(search);
+        });
+      }
+      var stats = Services.getStats();
+      this.$('statClients').textContent = stats.clients;
+      this.$('statClasses').textContent = stats.total;
+      this.$('statWeek').textContent = stats.week;
+      this.$('statMonth').textContent = stats.month;
+      var list = this.$('clientsList');
+      if (!clients.length) {
+        list.innerHTML = '<div class="empty"><div class="empty-icon">👥</div><div>Нет клиентов</div></div>';
+        return;
+      }
+      list.innerHTML = clients.map(function (c) {
+        var abBadge = '';
+        if (c.abonement && c.abonement.total > 0) {
+          var rem = Math.max(0, c.abonement.remaining || 0);
+          var tot = c.abonement.total;
+          var lvl = Domain.abonementLevel(rem, tot);
+          abBadge = '<span class="abon-badge ' + (lvl === 'ok' ? '' : lvl) + '">' + rem + '/' + tot + '</span>';
+        }
+        return '<div class="card" style="padding:12px 16px;cursor:pointer;" data-action="client-open" data-id="' + c.id + '">' +
+          '<div class="client-item"><div class="client-avatar">' + Domain.escapeHtml((c.name || '?')[0].toUpperCase()) + '</div>' +
+          '<div class="client-info"><div class="client-name">' + Domain.escapeHtml(c.name) + abBadge + '</div>' +
+          '<div class="client-phone">' + Domain.escapeHtml(c.phone || 'без телефона') + '</div></div></div></div>';
+      }).join('');
+    },
+    fillClientForm(client) {
+      this.$('clientForm').reset();
+      this.$('clientId').value = '';
+      this.$('btnDeleteClient').classList.add('hidden');
+      var panel = this.$('abonementPanel');
+      if (client) {
+        this.$('clientModalTitle').textContent = 'Карточка клиента';
+        this.$('clientId').value = client.id;
+        this.$('clientName').value = client.name;
+        this.$('clientPhone').value = client.phone || '';
+        this.$('clientNotes').value = client.notes || '';
+        this.$('btnDeleteClient').classList.remove('hidden');
+        if (panel) {
+          panel.classList.remove('hidden');
+          this.renderAbonementInfo(client);
+        }
+      } else {
+        this.$('clientModalTitle').textContent = 'Новый клиент';
+        if (panel) panel.classList.add('hidden');
+      }
+    },
+    renderAbonementInfo(client) {
+      var box = this.$('abonementInfo');
+      if (!box) return;
+      var ab = client.abonement;
+      if (!ab || (ab.remaining <= 0 && ab.total <= 0)) {
+        box.innerHTML = '<div class="text-sm text-muted">Абонемента нет. Выберите пакет ниже.</div>';
+        return;
+      }
+      var total = ab.total || ab.packSize || 1;
+      var rem = Math.max(0, ab.remaining || 0);
+      var pct = Math.min(100, Math.round((rem / total) * 100));
+      var color = Domain.abonementColor(rem, total);
+      box.innerHTML =
+        '<div class="abon-battery"><div class="abon-battery-fill" style="width:' + pct + '%;background:' + color + ';"></div></div>' +
+        '<div class="abon-meta"><span class="abon-count">' + rem + ' / ' + total + '</span>' +
+        '<span class="text-muted">' + (rem > 0 ? 'осталось занятий' : 'абонемент исчерпан') + '</span></div>';
+    },
+    setDuration(mins) {
+      var n = parseInt(mins, 10) || 60;
+      this.$('classDuration').value = String(n);
+      var custom = this.$('durationCustom');
+      var presets = [30, 45, 60, 75, 90, 120];
+      document.querySelectorAll('#durationChips .chip').forEach(function (btn) {
+        btn.classList.toggle('active', parseInt(btn.dataset.duration, 10) === n);
+      });
+      if (presets.indexOf(n) >= 0) {
+        if (custom) custom.value = '';
+      } else if (custom) {
+        custom.value = String(n);
+        document.querySelectorAll('#durationChips .chip').forEach(function (btn) {
+          btn.classList.remove('active');
+        });
+      }
+    },
+    fillClassForm(cls) {
+      this.$('classForm').reset();
+      this.$('classId').value = '';
+      this.$('btnDeleteClass').classList.add('hidden');
+      this.$('classDate').value = State.selectedDate;
+      this.setTimePicker('18:00');
+      this.setDuration(60);
+      this.$('classTitle').value = '';
+      var groupCb = this.$('classIsGroup');
+      if (groupCb) { groupCb.checked = false; groupCb.dataset.userTouched = ''; }
+      this.fillClassClubGroupSelect(cls && cls.clubGroupId ? cls.clubGroupId : '');
+      if (cls) {
+        this.$('classModalTitle').textContent = 'Редактировать';
+        this.$('classId').value = cls.id;
+        this.$('classTitle').value = cls.title || '';
+        this.$('classDate').value = cls.date;
+        this.setTimePicker(cls.time || '18:00');
+        this.setDuration(cls.duration || 60);
+        this.$('classNotes').value = cls.notes || '';
+        this.$('btnDeleteClass').classList.remove('hidden');
+        if (groupCb) groupCb.checked = Domain.isGroupClass(cls);
+        this.renderClassClientSelect(cls.clientIds || []);
+      } else {
+        this.$('classModalTitle').textContent = 'Новое занятие';
+        this.renderClassClientSelect([]);
+      }
+    },
+    fillClassClubGroupSelect(selectedId) {
+      var sel = this.$('classClubGroup');
+      if (!sel) return;
+      var html = '<option value="">— не выбрана —</option>';
+      var groups = State.clubGroups.slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); });
+      groups.forEach(function (g) {
+        html += '<option value="' + g.id + '"' + (selectedId === g.id ? ' selected' : '') + '>' +
+          Domain.escapeHtml(g.name) + ' (' + ((g.memberIds && g.memberIds.length) || 0) + ' чел.)</option>';
+      });
+      sel.innerHTML = html;
+      sel.onchange = function () {
+        var gid = sel.value;
+        if (!gid) return;
+        var g = State.clubGroups.find(function (x) { return x.id === gid; });
+        if (!g) return;
+        var titleEl = UI.$('classTitle');
+        if (titleEl && !titleEl.value.trim()) titleEl.value = g.name;
+      };
+    },
+    renderClassClientSelect(selectedIds) {
+      var box = this.$('classClientSelect');
+      if (!State.clients.length) {
+        box.innerHTML = '<div class="text-sm text-muted" style="padding:12px">Сначала добавьте клиентов</div>';
+        return;
+      }
+      var sorted = State.clients.slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); });
+      box.innerHTML = sorted.map(function (c) {
+        var ab = '';
+        if (c.abonement && c.abonement.total > 0) {
+          var rem = Math.max(0, c.abonement.remaining || 0);
+          var lvl = Domain.abonementLevel(rem, c.abonement.total);
+          ab = '<span class="abon-badge ' + (lvl === 'ok' ? '' : lvl) + '">' + rem + '/' + c.abonement.total + '</span>';
+        }
+        return '<label class="client-select-item">' +
+          '<input type="checkbox" value="' + c.id + '" ' + (selectedIds.indexOf(c.id) >= 0 ? 'checked' : '') + '>' +
+          '<span class="client-select-meta">' +
+            '<span class="client-select-name">' + Domain.escapeHtml(c.name) + ab + '</span>' +
+            (c.phone ? '<span class="client-select-phone">' + Domain.escapeHtml(c.phone) + '</span>' : '') +
+          '</span></label>';
+      }).join('');
+    },
+    renderClassDetail(cls) {
+      var clients = (cls.clientIds || []).map(function (cid) {
+        var c = State.clients.find(function (x) { return x.id === cid; });
+        return c ? Object.assign({}, c, { paid: !!(cls.payments && cls.payments[cid]) }) : null;
+      }).filter(Boolean);
+      var paidCount = clients.filter(function (c) { return c.paid; }).length;
+      var html = '<div class="card" style="margin-bottom:16px;background:var(--primary-light);border-color:transparent;">' +
+        '<div style="font-weight:600;">' + Domain.formatDisplayDate(cls.date) + '</div>' +
+        (cls.title ? '<div style="font-size:1.15rem;font-weight:700;margin-top:4px;">' + Domain.escapeHtml(cls.title) + '</div>' : '') +
+        '<div style="font-size:1.15rem;font-weight:600;color:var(--primary);margin-top:4px;">' + Domain.formatTimeRange(cls.time, cls.duration || 60) + '</div>' +
+        (cls.notes ? '<div class="text-sm mt-2">📝 ' + Domain.escapeHtml(cls.notes) + '</div>' : '') +
+        '</div><div class="flex justify-between items-center mb-2"><div style="font-weight:600;">Клиенты и оплата</div>' +
+        '<div class="text-sm text-muted">' + paidCount + ' / ' + clients.length + '</div></div>';
+      if (!clients.length) {
+        html += '<div class="empty" style="padding:20px;">Нет клиентов</div>';
+      } else {
+        html += clients.map(function (c) {
+          var abMark = '';
+          if (c.abonement && c.abonement.total > 0) {
+            var rem = Math.max(0, c.abonement.remaining || 0);
+            var tot = c.abonement.total;
+            var lvl = Domain.abonementLevel(rem, tot);
+            abMark = ' <span class="abon-badge ' + (lvl === 'ok' ? '' : lvl) + '">' + rem + '/' + tot + '</span>';
+          }
+          return '<div class="checkbox-item"><label for="pay_' + c.id + '" style="color:' + (c.paid ? '#059669' : 'inherit') +
+            ';font-weight:' + (c.paid ? 600 : 500) + ';">' + Domain.escapeHtml(c.name) + abMark + '</label>' +
+            '<span class="paid-badge ' + (c.paid ? 'yes' : 'no') + '">' + (c.paid ? 'Оплатил' : 'Не оплатил') + '</span>' +
+            '<input type="checkbox" id="pay_' + c.id + '" ' + (c.paid ? 'checked' : '') +
+            ' data-action="toggle-pay" data-class="' + cls.id + '" data-client="' + c.id + '"></div>';
+        }).join('');
+      }
+      this.$('classDetailContent').innerHTML = html;
+    },
+    formatMoney(n) {
+      return (Math.round(n) || 0).toLocaleString('ru-RU') + ' ₽';
+    },
+    renderClub() {
+      var sum = Services.clubOverallStats();
+      var sumEl = this.$('clubSummary');
+      if (sumEl) {
+        sumEl.innerHTML =
+          '<div class="club-summary-chip"><div class="val">' + sum.groups + '</div><div class="lbl">Групп</div></div>' +
+          '<div class="club-summary-chip"><div class="val">' + sum.members + '</div><div class="lbl">Членов</div></div>' +
+          '<div class="club-summary-chip"><div class="val">' + sum.paid + '/' + sum.count + '</div><div class="lbl">Оплатили взносы</div></div>' +
+          '<div class="club-summary-chip"><div class="val" style="font-size:1rem;">' + this.formatMoney(sum.collected) + '</div><div class="lbl">Собрано</div></div>';
+      }
+
+      var groupsEl = this.$('clubGroupsList');
+      if (groupsEl) {
+        if (!State.clubGroups.length) {
+          groupsEl.innerHTML = '<div class="text-sm text-muted" style="padding:8px 0;">Пока нет групп — нажмите «Сформировать группу»</div>';
+        } else {
+          groupsEl.innerHTML = State.clubGroups.map(function (g) {
+            var st = Services.clubGroupStats(g);
+            var bcls = st.count === 0 ? 'is-zero' : (st.paid === st.count ? '' : (st.paid === 0 ? 'is-zero' : 'is-partial'));
+            return '<div class="club-group-card" data-action="club-group-open" data-id="' + g.id + '">' +
+              '<div class="club-group-title">' + Domain.escapeHtml(g.name) + '</div>' +
+              '<div class="club-group-meta">' +
+                '<span>' + st.paid + '/' + st.count + ' оплатили</span>' +
+                '<span>взнос ' + UI.formatMoney(g.fee) + '</span>' +
+                '<span class="club-money-bubble ' + bcls + '">' + UI.formatMoney(st.collected) + '</span>' +
+              '</div>' +
+              (g.notes ? '<div class="text-sm text-muted" style="margin-top:6px;">📝 ' + Domain.escapeHtml(g.notes) + '</div>' : '') +
+            '</div>';
+          }).join('');
+        }
+      }
+
+      var listEl = this.$('clubMembersList');
+      if (listEl) {
+        var sorted = State.clubMembers.slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); });
+        if (!sorted.length) {
+          listEl.innerHTML = '<div class="empty"><div class="empty-icon">🏆</div><div>Нет членов клуба — нажмите «+»</div></div>';
+        } else {
+          listEl.innerHTML = sorted.map(function (m, i) {
+            var disc = m.discount > 0 ? '<span class="club-discount-badge">−' + UI.formatMoney(m.discount) + '</span>' : '';
+            return '<div class="club-member-row" data-action="club-member-open" data-id="' + m.id + '">' +
+              '<div class="club-member-num">' + (i + 1) + '</div>' +
+              '<div class="club-member-info">' +
+                '<div class="club-member-name">' + Domain.escapeHtml(m.name) + disc + '</div>' +
+                (m.phone ? '<div class="client-phone">' + Domain.escapeHtml(m.phone) + '</div>' : '') +
+              '</div></div>';
+          }).join('');
+        }
+      }
+      this.lockMoneyBubbles();
+    },
+    fillClubMemberForm(member) {
+      this.$('clubMemberForm').reset();
+      this.$('clubMemberId').value = '';
+      this.$('btnDeleteClubMember').classList.add('hidden');
+      if (member) {
+        this.$('clubMemberModalTitle').textContent = 'Член клуба';
+        this.$('clubMemberId').value = member.id;
+        this.$('clubMemberName').value = member.name || '';
+        this.$('clubMemberPhone').value = member.phone || '';
+        this.$('clubMemberNotes').value = member.notes || '';
+        this.$('btnDeleteClubMember').classList.remove('hidden');
+      } else {
+        this.$('clubMemberModalTitle').textContent = 'Новый член клуба';
+      }
+    },
+    fillClubGroupForm(group) {
+      this.$('clubGroupForm').reset();
+      this.$('clubGroupId').value = '';
+      this.$('btnDeleteClubGroup').classList.add('hidden');
+      this.$('clubGroupFee').value = '3000';
+      var selected = [];
+      if (group) {
+        this.$('clubGroupModalTitle').textContent = 'Редактировать группу';
+        this.$('clubGroupId').value = group.id;
+        this.$('clubGroupName').value = group.name || '';
+        this.$('clubGroupFee').value = group.fee != null ? group.fee : 3000;
+        this.$('clubGroupNotes').value = group.notes || '';
+        selected = group.memberIds || [];
+        this.$('btnDeleteClubGroup').classList.remove('hidden');
+      } else {
+        this.$('clubGroupModalTitle').textContent = 'Новая группа';
+      }
+      this.renderClubGroupMemberSelect(selected);
+    },
+    renderClubGroupMemberSelect(selectedIds) {
+      var box = this.$('clubGroupMemberSelect');
+      if (!box) return;
+      var sorted = State.clubMembers.slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); });
+      if (!sorted.length) {
+        box.innerHTML = '<div class="text-sm text-muted" style="padding:12px">Сначала добавьте членов клуба</div>';
+        return;
+      }
+      selectedIds = selectedIds || [];
+      box.innerHTML = sorted.map(function (m) {
+        var disc = m.discount > 0 ? ' <span class="club-discount-badge">−' + UI.formatMoney(m.discount) + '</span>' : '';
+        return '<label class="client-select-item">' +
+          '<input type="checkbox" value="' + m.id + '" ' + (selectedIds.indexOf(m.id) >= 0 ? 'checked' : '') + '>' +
+          '<span class="client-select-meta"><span class="client-select-name">' + Domain.escapeHtml(m.name) + disc + '</span>' +
+          (m.phone ? '<span class="client-select-phone">' + Domain.escapeHtml(m.phone) + '</span>' : '') +
+          '</span></label>';
+      }).join('');
+    },
+    renderClubGroupDetail(group) {
+      if (!group) return;
+      this.$('clubGroupDetailTitle').textContent = group.name || 'Группа';
+      var members = (group.memberIds || []).map(function (id) {
+        return State.clubMembers.find(function (m) { return m.id === id; });
+      }).filter(Boolean).sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); });
+      var st = Services.clubGroupStats(group);
+      var bcls = st.count === 0 ? 'is-zero' : (st.paid === st.count ? '' : (st.paid === 0 ? 'is-zero' : 'is-partial'));
+
+      var html = '<div class="card" style="margin-bottom:12px;background:var(--primary-light);border-color:transparent;">' +
+        '<div style="font-weight:700;font-size:1.1rem;">' + Domain.escapeHtml(group.name) + '</div>' +
+        '<div class="text-sm" style="margin-top:4px;">Взнос: <strong>' + this.formatMoney(group.fee) + '</strong></div>' +
+        (group.notes ? '<div class="text-sm mt-2">📝 ' + Domain.escapeHtml(group.notes) + '</div>' : '') +
+        '</div>';
+
+      if (!members.length) {
+        html += '<div class="empty" style="padding:20px;">Нет участников</div>';
+      } else {
+        html += members.map(function (m, i) {
+          var paid = !!(group.payments && group.payments[m.id]);
+          var due = Services.clubMemberDue(group, m);
+          var disc = m.discount > 0 ? '<span class="club-discount-badge">−' + UI.formatMoney(m.discount) + '</span>' : '';
+          return '<div class="club-member-row ' + (paid ? 'paid' : 'unpaid') + '">' +
+            '<div class="club-member-num">' + (i + 1) + '</div>' +
+            '<div class="club-member-info" data-action="club-discount-open" data-id="' + m.id + '">' +
+              '<div class="club-member-name" style="color:' + (paid ? '#047857' : '#b91c1c') + ';">' +
+                Domain.escapeHtml(m.name) + disc +
+              '</div>' +
+              '<div class="client-phone">к оплате ' + UI.formatMoney(due) + '</div>' +
+            '</div>' +
+            '<input type="checkbox" ' + (paid ? 'checked' : '') +
+              ' data-action="club-toggle-pay" data-group="' + group.id + '" data-member="' + m.id + '">' +
+          '</div>';
+        }).join('');
+      }
+
+      html += '<div class="group-detail-total">' +
+        '<div style="font-weight:600;">' + st.paid + ' / ' + st.count + ' оплатили</div>' +
+        '<span class="club-money-bubble ' + bcls + '">' + this.formatMoney(st.collected) + ' из ' + this.formatMoney(st.totalMoney) + '</span>' +
+        '</div>';
+
+      this.$('clubGroupDetailContent').innerHTML = html;
+      this.lockMoneyBubbles();
+    }
+  };
+
+  /* =========================================================
+   * 7. CONTROLLERS
+   * ========================================================= */
+  const Controllers = {
+    onWeekChange(dir) {
+      State.currentWeekStart = Domain.addDays(State.currentWeekStart, dir * 7);
+      var sel = new Date(State.selectedDate + 'T12:00:00');
+      var end = Domain.addDays(State.currentWeekStart, 6);
+      if (sel < State.currentWeekStart || sel > end) State.selectedDate = Domain.formatDate(State.currentWeekStart);
+      UI.renderSchedule();
+    },
+    onSelectDay(dateStr) {
+      State.selectedDate = dateStr;
+      State.currentWeekStart = Domain.getMonday(new Date(dateStr + 'T12:00:00'));
+      UI.renderSchedule();
+    },
+    onJumpToDate(dateStr) {
+      if (!dateStr) return;
+      var d = new Date(dateStr + 'T12:00:00');
+      State.currentWeekStart = Domain.getMonday(d);
+      State.selectedDate = Domain.formatDate(d);
+      UI.renderSchedule();
+    },
+    onClearDay() {
+      var n = State.classes.filter(function (c) { return c.date === State.selectedDate; }).length;
+      if (!n) { UI.showToast('Нет занятий'); return; }
+      if (!confirm('Удалить все занятия за ' + Domain.formatDisplayDate(State.selectedDate) + ' (' + n + ')?')) return;
+      Services.clearDay(State.selectedDate);
+      UI.renderSchedule();
+      UI.showToast('День очищен');
+    },
+    openClientModal(id) {
+      var client = id ? State.clients.find(function (c) { return c.id === id; }) : null;
+      UI.fillClientForm(client || null);
+      UI.openModal('clientModal');
+    },
+    saveClient(e) {
+      e.preventDefault();
+      var id = UI.$('clientId').value;
+      var payload = { name: UI.$('clientName').value, phone: UI.$('clientPhone').value, notes: UI.$('clientNotes').value };
+      if (!payload.name.trim()) return;
+      if (!Domain.isValidPhone(payload.phone)) {
+        UI.showToast('Введите номер полностью: 11 цифр');
+        UI.$('clientPhone').focus();
+        return;
+      }
+      if (id) {
+        // при редактировании — дубликат только среди других клиентов
+        var nameL = payload.name.trim().toLowerCase();
+        var phoneN = Domain.normalizePhone(payload.phone);
+        var dup = State.clients.some(function (c) {
+          if (c.id === id) return false;
+          var sameName = c.name.toLowerCase() === nameL;
+          var samePhone = phoneN && c.phone && Domain.normalizePhone(c.phone) === phoneN;
+          return sameName || samePhone;
+        });
+        if (dup && !confirm('Похожий клиент уже есть. Всё равно сохранить?')) return;
+        Services.updateClient(id, payload);
+        UI.showToast('Клиент обновлён');
+      } else {
+        if (Services.clientExists(payload.name.trim(), payload.phone)) {
+          if (!confirm('Клиент с таким именем или телефоном уже есть. Добавить всё равно?')) return;
+        }
+        Services.createClient(payload);
+        UI.showToast('Клиент добавлен');
+      }
+      UI.closeModal('clientModal');
+      UI.renderClients();
+    },
+    deleteClient() {
+      var id = UI.$('clientId').value;
+      if (!id || !confirm('Удалить клиента?')) return;
+      Services.deleteClient(id);
+      UI.closeModal('clientModal');
+      UI.renderClients();
+      UI.showToast('Удалён');
+    },
+    /** Импорт контактов: Contact Picker (Android Chrome) → иначе файл / вставка */
+    pickContacts: async function () {
+      // 0) Нативный мост APK (WebView). Contact Picker API внутри WebView
+      //    не существует, поэтому выбор контакта делает сам Android.
+      if (window.AndroidContacts && typeof window.AndroidContacts.pickContact === 'function') {
+        try {
+          window.AndroidContacts.pickContact();
+          return;
+        } catch (err) {
+          console.warn('[pickContacts] native bridge', err);
+          UI.showToast('Не удалось открыть контакты');
+          return;
+        }
+      }
+      // 1) Contact Picker API (в основном Android Chrome, https)
+      if ('contacts' in navigator && 'ContactsManager' in window) {
+        try {
+          var contacts = await navigator.contacts.select(['name', 'tel'], { multiple: true });
+          Services.updateSettings({ contactsAccess: 'granted' });
+          UI.updateContactsStatus();
+          if (!contacts || !contacts.length) return;
+          Controllers._ingestContactList(contacts.map(function (c) {
+            return {
+              name: (c.name && c.name[0] || '').trim(),
+              phone: (c.tel && c.tel[0] || '').trim()
+            };
+          }));
+          return;
+        } catch (err) {
+          // Permission denied or cancelled
+          if (err && (err.name === 'NotAllowedError' || err.name === 'SecurityError')) {
+            Services.updateSettings({ contactsAccess: 'denied' });
+            UI.updateContactsStatus();
+            UI.showToast('Доступ к контактам запрещён. Разрешите в настройках браузера или импортируйте файл.');
+            return;
+          }
+          // fall through to file/paste
+        }
+      }
+      // 2) Универсальный fallback: файл vCard/CSV или список имён
+      Controllers._showContactsFallback();
+    },
+    _showContactsFallback: function () {
+      var choice = confirm(
+        'На этом устройстве системный выбор контактов недоступен (типично для iPhone).\n\n' +
+        'ОК — выбрать файл vCard/CSV из «Контакты»/Файлы.\n' +
+        'Отмена — вставить список имён текстом.'
+      );
+      if (choice) {
+        var inp = UI.$('contactsFileInput');
+        if (inp) inp.click();
+        return;
+      }
+      var raw = prompt('Вставьте имена (каждое с новой строки). Можно «Имя, телефон»:');
+      if (!raw) return;
+      var list = raw.split(/[\n;]+/).map(function (line) {
+        line = line.trim();
+        if (!line) return null;
+        var parts = line.split(/[,|\t]/);
+        return { name: (parts[0] || '').trim(), phone: (parts[1] || '').trim() };
+      }).filter(Boolean);
+      Controllers._ingestContactList(list);
+    },
+    _ingestContactList: function (list) {
+      if (!list || !list.length) {
+        UI.showToast('Нет контактов для добавления');
+        return;
+      }
+      if (list.length === 1 && UI.$('clientModal') && UI.$('clientModal').classList.contains('show')) {
+        var one = list[0];
+        if (one.name) UI.$('clientName').value = one.name;
+        if (one.phone) UI.$('clientPhone').value = one.phone;
+        UI.showToast('Контакт подставлен в форму');
+        return;
+      }
+      var added = 0, skipped = 0;
+      list.forEach(function (c) {
+        var name = (c.name || '').trim();
+        var phone = (c.phone || '').trim();
+        if (!name) { skipped++; return; }
+        if (Services.clientExists(name, phone)) { skipped++; return; }
+        Services.createClient({ name: name, phone: phone, notes: '' });
+        added++;
+      });
+      UI.closeModal('clientModal');
+      UI.renderClients();
+      UI.showToast(added ? ('Добавлено: ' + added + (skipped ? ', пропущено: ' + skipped : '')) : 'Все уже есть');
+    },
+    importContactsFile: function (file) {
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function () {
+        try {
+          var text = String(reader.result || '');
+          var list = Controllers._parseContactsFile(text, file.name || '');
+          Controllers._ingestContactList(list);
+        } catch (e) {
+          console.error(e);
+          UI.showToast('Не удалось прочитать файл');
+        }
+      };
+      reader.readAsText(file);
+    },
+    _parseContactsFile: function (text, filename) {
+      var list = [];
+      var lower = (filename || '').toLowerCase();
+      // vCard
+      if (lower.indexOf('.vcf') !== -1 || text.indexOf('BEGIN:VCARD') !== -1) {
+        var cards = text.split(/BEGIN:VCARD/i);
+        cards.forEach(function (card) {
+          if (!card.trim()) return;
+          var name = '';
+          var phone = '';
+          var fn = card.match(/\nFN[;:]([^\n]+)/i);
+          if (fn) name = fn[1].replace(/^[;:]+/, '').trim();
+          if (!name) {
+            var n = card.match(/\nN[;:]([^\n]+)/i);
+            if (n) {
+              var parts = n[1].split(';');
+              name = [parts[1], parts[0]].filter(Boolean).join(' ').trim();
+            }
+          }
+          var tel = card.match(/\nTEL[^:]*:([^\n]+)/i);
+          if (tel) phone = tel[1].trim();
+          if (name) list.push({ name: name, phone: phone });
+        });
+        return list;
+      }
+      // CSV / plain: name,phone per line
+      text.split(/\r?\n/).forEach(function (line) {
+        line = line.trim();
+        if (!line || /^name\s*[,;]/i.test(line)) return;
+        var parts = line.split(/[,;\t]/);
+        var name = (parts[0] || '').replace(/^"|"$/g, '').trim();
+        var phone = (parts[1] || '').replace(/^"|"$/g, '').trim();
+        if (name) list.push({ name: name, phone: phone });
+      });
+      return list;
+    },
+    openClassModal(id) {
+      var cls = id ? State.classes.find(function (c) { return c.id === id; }) : null;
+      UI.fillClassForm(cls || null);
+      UI.openModal('classModal');
+    },
+    saveClass(e) {
+      e.preventDefault();
+      var id = UI.$('classId').value;
+      var groupEl = UI.$('classIsGroup');
+      var clubGroupEl = UI.$('classClubGroup');
+      var clubGroupId = clubGroupEl && clubGroupEl.value ? clubGroupEl.value : null;
+      var data = {
+        title: UI.$('classTitle').value,
+        date: UI.$('classDate').value,
+        time: UI.$('classTime').value,
+        duration: parseInt(UI.$('classDuration').value, 10) || 60,
+        notes: UI.$('classNotes').value,
+        clientIds: Array.from(document.querySelectorAll('#classClientSelect input:checked')).map(function (cb) { return cb.value; }),
+        isGroup: groupEl ? !!groupEl.checked : false,
+        clubGroupId: clubGroupId
+      };
+      if (clubGroupId && !data.title.trim()) {
+        var cg = State.clubGroups.find(function (g) { return g.id === clubGroupId; });
+        if (cg) data.title = cg.name;
+      }
+      var overlaps = Domain.findOverlaps(State.classes, data.date, data.time, data.duration, id || null);
+      if (overlaps.length) {
+        var free = Domain.findFreeSlots(State.classes, data.date, data.duration, id || null);
+        var msg = 'Время пересекается:\n';
+        overlaps.forEach(function (o) { msg += '• ' + o.time + ' (' + (o.duration || 60) + ' мин)\n'; });
+        msg += free.length ? '\nСвободно:\n' + free.slice(0, 8).join(', ') : '\nСвободных слотов нет';
+        alert(msg);
+        return;
+      }
+      if (id) { Services.updateClass(id, data); UI.showToast('Обновлено'); }
+      else { Services.createClass(data); UI.showToast('Создано'); }
+      State.selectedDate = data.date;
+      State.currentWeekStart = Domain.getMonday(new Date(data.date + 'T12:00:00'));
+      UI.closeModal('classModal');
+      UI.renderSchedule();
+    },
+    deleteClass() {
+      var id = UI.$('classId').value || State.currentDetailClassId;
+      if (!id || !confirm('Удалить занятие?')) return;
+      Services.deleteClass(id);
+      State.currentDetailClassId = null;
+      UI.closeModal('classModal');
+      UI.closeModal('classDetailModal');
+      UI.renderSchedule();
+      UI.showToast('Удалено');
+    },
+    openClubMemberModal(id) {
+      var m = id ? State.clubMembers.find(function (x) { return x.id === id; }) : null;
+      UI.fillClubMemberForm(m || null);
+      UI.openModal('clubMemberModal');
+    },
+    saveClubMember(e) {
+      e.preventDefault();
+      var id = UI.$('clubMemberId').value;
+      var payload = {
+        name: UI.$('clubMemberName').value,
+        phone: UI.$('clubMemberPhone').value,
+        notes: UI.$('clubMemberNotes').value
+      };
+      if (!payload.name.trim()) { UI.showToast('Укажите имя'); return; }
+      if (!Domain.isValidPhone(payload.phone)) {
+        UI.showToast('Введите номер полностью: 11 цифр');
+        UI.$('clubMemberPhone').focus();
+        return;
+      }
+      if (id) { Services.updateClubMember(id, payload); UI.showToast('Сохранено'); }
+      else { Services.createClubMember(payload); UI.showToast('Член клуба добавлен'); }
+      UI.closeModal('clubMemberModal');
+      UI.renderClub();
+    },
+    deleteClubMember() {
+      var id = UI.$('clubMemberId').value;
+      if (!id || !confirm('Удалить члена клуба?')) return;
+      Services.deleteClubMember(id);
+      UI.closeModal('clubMemberModal');
+      UI.renderClub();
+      UI.showToast('Удалено');
+    },
+    openClubGroupModal(id) {
+      var g = id ? State.clubGroups.find(function (x) { return x.id === id; }) : null;
+      UI.fillClubGroupForm(g || null);
+      UI.openModal('clubGroupModal');
+    },
+    saveClubGroup(e) {
+      e.preventDefault();
+      var id = UI.$('clubGroupId').value;
+      var memberIds = [];
+      document.querySelectorAll('#clubGroupMemberSelect input[type=checkbox]:checked').forEach(function (cb) {
+        memberIds.push(cb.value);
+      });
+      var payload = {
+        name: UI.$('clubGroupName').value,
+        fee: UI.$('clubGroupFee').value,
+        notes: UI.$('clubGroupNotes').value,
+        memberIds: memberIds
+      };
+      if (!payload.name.trim()) { UI.showToast('Укажите название'); return; }
+      if (id) { Services.updateClubGroup(id, payload); UI.showToast('Группа обновлена'); }
+      else { Services.createClubGroup(payload); UI.showToast('Группа создана'); }
+      UI.closeModal('clubGroupModal');
+      UI.renderClub();
+      if (State.currentDetailGroupId) {
+        var g2 = State.clubGroups.find(function (x) { return x.id === State.currentDetailGroupId; });
+        if (g2) UI.renderClubGroupDetail(g2);
+      }
+    },
+    deleteClubGroup() {
+      var id = UI.$('clubGroupId').value || State.currentDetailGroupId;
+      if (!id || !confirm('Удалить группу?')) return;
+      Services.deleteClubGroup(id);
+      State.currentDetailGroupId = null;
+      UI.closeModal('clubGroupModal');
+      UI.closeModal('clubGroupDetailModal');
+      UI.renderClub();
+      UI.showToast('Группа удалена');
+    },
+    openClubGroupDetail(id) {
+      var g = State.clubGroups.find(function (x) { return x.id === id; });
+      if (!g) return;
+      State.currentDetailGroupId = id;
+      UI.renderClubGroupDetail(g);
+      UI.openModal('clubGroupDetailModal');
+    },
+    toggleClubPayment(groupId, memberId, paid) {
+      Services.setClubGroupPayment(groupId, memberId, paid);
+      var g = State.clubGroups.find(function (x) { return x.id === groupId; });
+      if (g) UI.renderClubGroupDetail(g);
+      UI.renderClub();
+      UI.showToast(paid ? 'Взнос отмечен' : 'Отметка снята');
+    },
+    openDiscountModal(memberId) {
+      var m = State.clubMembers.find(function (x) { return x.id === memberId; });
+      if (!m) return;
+      UI.$('clubDiscountMemberId').value = m.id;
+      UI.$('clubDiscountMemberName').textContent = m.name + (m.discount ? ' (сейчас −' + m.discount + ' ₽)' : '');
+      UI.$('clubDiscountCustom').value = m.discount || '';
+      UI.openModal('clubDiscountModal');
+    },
+    applyDiscount(amount) {
+      var id = UI.$('clubDiscountMemberId').value;
+      if (!id) return;
+      Services.setClubMemberDiscount(id, amount);
+      UI.closeModal('clubDiscountModal');
+      UI.renderClub();
+      if (State.currentDetailGroupId) {
+        var g = State.clubGroups.find(function (x) { return x.id === State.currentDetailGroupId; });
+        if (g) UI.renderClubGroupDetail(g);
+      }
+      UI.showToast(amount ? ('Скидка ' + amount + ' ₽') : 'Скидка снята');
+    },
+    openClassDetail(id) {
+      var cls = State.classes.find(function (x) { return x.id === id; });
+      if (!cls) return;
+      // подтянуть абонементы (на случай если занятие создали раньше абонемента)
+      if (Domain.isGroupClass(cls)) {
+        Services.syncAbonementsForClass(cls, cls.clientIds || []);
+        State.persist();
+        cls = State.classes.find(function (x) { return x.id === id; });
+      }
+      State.currentDetailClassId = id;
+      UI.renderClassDetail(cls);
+      UI.renderSchedule();
+      UI.renderClients();
+      UI.openModal('classDetailModal');
+    },
+    togglePayment(classId, clientId, paid) {
+      Services.setPayment(classId, clientId, paid);
+      this.openClassDetail(classId);
+      UI.renderSchedule();
+      UI.showToast(paid ? 'Оплачено' : 'Оплата снята');
+    },
+    saveSettingsFromForm() {
+      Services.updateSettings({
+        calendarName: UI.$('settingCalendarName').value.trim(),
+        dark: UI.$('settingDark').checked,
+        primary: UI.$('settingColor').value
+      });
+      UI.applyTheme();
+      UI.renderSchedule();
+      UI.showToast('Настройки сохранены');
+    },
+    setPrimaryColor(color) {
+      Services.updateSettings({ primary: color });
+      UI.$('settingColor').value = color;
+      UI.applyTheme();
+      UI.renderSchedule();
+    },
+    setCalStyle(style) {
+      Services.updateSettings({ calStyle: style });
+      UI.applyTheme();
+      UI.renderSchedule();
+    },
+    saveProfile() {
+      var name = UI.$('authName').value.trim();
+      var phone = UI.$('authPhone').value.trim();
+      Services.updateSettings({ profileName: name, profilePhone: phone });
+      Auth.updateProfile({ name: name, login: phone || (State.currentUser && State.currentUser.login) });
+      UI.applyTheme();
+      UI.closeModal('authModal');
+      UI.showToast('Профиль сохранён');
+    },
+    clearProfile() {
+      Services.updateSettings({ profileName: '', profilePhone: '' });
+      UI.applyTheme();
+      UI.closeModal('authModal');
+      UI.showToast('Профиль очищен');
+    },
+    exportData() {
+      var blob = new Blob([Services.exportJson()], { type: 'application/json' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'dance-trainer-backup.json';
+      a.click();
+      UI.showToast('Экспорт готов');
+    },
+    importData(file) {
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function () {
+        try {
+          Services.importJson(reader.result);
+          UI.applyTheme();
+          UI.renderSchedule();
+          UI.renderClients();
+          UI.showToast('Импорт выполнен');
+        } catch (err) {
+          UI.showToast('Ошибка файла');
+        }
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  /* =========================================================
+   * 8. BOOTSTRAP
+   * ========================================================= */
+  function bindEvents() {
+    /* —— Версия сборки: сразу видно, какой файл реально открыт —— */
+    try {
+      var bv = document.getElementById('buildVersion');
+      if (bv) bv.textContent = 'сборка ' + CONFIG.BUILD;
+      console.log('[Танцевальный тренер] сборка ' + CONFIG.BUILD);
+    } catch (e) {}
+
+    UI.$('bottomNav').addEventListener('click', function (e) {
+      var tab = e.target.closest('[data-tab]');
+      if (tab) UI.switchTab(tab.dataset.tab);
+    });
+
+    /* —— Метка сборки в Настройках —— */
+    (function () {
+      var stamp = document.getElementById('buildStamp');
+      if (stamp) stamp.textContent = 'Версия файла: ' + CONFIG.BUILD;
+      console.log('[Танцевальный тренер] сборка', CONFIG.BUILD);
+    })();
+
+    /* —— Маска телефона для всех полей type="tel" ——
+       Ввод только цифр, формат +7 999 123-45-67, ровно 11 цифр. */
+    Array.prototype.forEach.call(document.querySelectorAll('input[type="tel"]'), function (el) {
+      el.setAttribute('inputmode', 'numeric');
+      el.setAttribute('maxlength', '18');
+      el.setAttribute('autocomplete', 'tel');
+      if (!el.placeholder || el.placeholder === '+7 ...') el.placeholder = '+7 999 123-45-67';
+    });
+    document.addEventListener('input', function (e) {
+      var el = e.target;
+      if (!el || el.tagName !== 'INPUT' || el.type !== 'tel') return;
+      // В поле входа логином может быть email — его форматировать нельзя.
+      if (/[a-zA-Zа-яА-Я@]/.test(el.value)) {
+        el.classList.remove('phone-incomplete');
+        return;
+      }
+      var formatted = Domain.formatPhoneInput(el.value);
+      if (el.value !== formatted) {
+        el.value = formatted;
+        try { el.setSelectionRange(formatted.length, formatted.length); } catch (err) {}
+      }
+      el.classList.toggle('phone-incomplete', !Domain.isValidPhone(el.value));
+    }, true);
+
+    document.body.addEventListener('click', function (e) {
+      var el = e.target.closest('[data-action]');
+      if (!el) return;
+      var action = el.dataset.action;
+      switch (action) {
+        case 'week-prev': Controllers.onWeekChange(-1); break;
+        case 'week-next': Controllers.onWeekChange(1); break;
+        case 'select-day': Controllers.onSelectDay(el.dataset.date); break;
+        case 'copy-week': {
+          var prevMon = Domain.addDays(State.currentWeekStart, -7);
+          var prevSun = Domain.addDays(prevMon, 6);
+          var count = State.classes.filter(function (c) {
+            var d = new Date(c.date + 'T12:00:00');
+            return d >= prevMon && d <= prevSun;
+          }).length;
+          if (!count) { UI.showToast('В прошлой неделе нет занятий'); break; }
+          if (!confirm('Скопировать ' + count + ' занятий с прошлой недели?\nЗанятия с пересечением по времени будут пропущены.')) break;
+          var res = Services.copyPreviousWeek(State.currentWeekStart);
+          UI.renderSchedule();
+          var msg = 'Скопировано: ' + res.copied;
+          if (res.skipped) msg += ', пропущено (пересечение): ' + res.skipped;
+          UI.showToast(msg);
+          break;
+        }
+        case 'clear-day': Controllers.onClearDay(); break;
+        case 'class-create': Controllers.openClassModal(null); break;
+        case 'class-open': Controllers.openClassDetail(el.dataset.id); break;
+        case 'class-edit-current':
+          UI.closeModal('classDetailModal');
+          Controllers.openClassModal(State.currentDetailClassId);
+          break;
+        case 'class-delete': Controllers.deleteClass(); break;
+        case 'client-create': Controllers.openClientModal(null); break;
+        case 'fab-add': {
+          var activeTab = document.querySelector('.nav-item.active');
+          var tab = activeTab ? activeTab.dataset.tab : 'schedule';
+          if (tab === 'clients') Controllers.openClientModal(null);
+          else if (tab === 'club') Controllers.openClubMemberModal(null);
+          else Controllers.openClassModal(null);
+          break;
+        }
+        case 'club-member-open': Controllers.openClubMemberModal(el.dataset.id); break;
+        case 'club-member-delete': Controllers.deleteClubMember(); break;
+        case 'club-group-create': Controllers.openClubGroupModal(null); break;
+        case 'club-group-open': Controllers.openClubGroupDetail(el.dataset.id); break;
+        case 'club-group-edit-current':
+          UI.closeModal('clubGroupDetailModal');
+          Controllers.openClubGroupModal(State.currentDetailGroupId);
+          break;
+        case 'club-group-delete': Controllers.deleteClubGroup(); break;
+        case 'club-toggle-pay':
+          Controllers.toggleClubPayment(el.dataset.group, el.dataset.member, el.checked);
+          break;
+        case 'club-discount-open':
+          Controllers.openDiscountModal(el.dataset.id);
+          break;
+        case 'club-discount-set':
+          Controllers.applyDiscount(parseInt(el.dataset.amount, 10) || 0);
+          break;
+        case 'club-discount-custom': {
+          var custom = parseInt(UI.$('clubDiscountCustom').value, 10);
+          if (isNaN(custom) || custom < 0) { UI.showToast('Введите сумму'); break; }
+          Controllers.applyDiscount(custom);
+          break;
+        }
+        case 'abon-add': {
+          var cid = UI.$('clientId').value;
+          if (!cid) { UI.showToast('Сначала сохраните клиента'); break; }
+          var sessions = el.dataset.sessions;
+          Services.addAbonement(cid, sessions);
+          var client = State.clients.find(function (x) { return x.id === cid; });
+          UI.renderAbonementInfo(client);
+          UI.renderClients();
+          UI.renderSchedule();
+          if (State.currentDetailClassId) {
+            var dcls = State.classes.find(function (x) { return x.id === State.currentDetailClassId; });
+            if (dcls) UI.renderClassDetail(dcls);
+          }
+          var rem = client && client.abonement ? client.abonement.remaining : '';
+          UI.showToast('Абонемент обновлён' + (rem !== '' ? ': осталось ' + rem : ''));
+          break;
+        }
+        case 'abon-clear': {
+          var cid2 = UI.$('clientId').value;
+          if (!cid2) break;
+          if (!confirm('Сбросить абонемент клиента?')) break;
+          Services.clearAbonement(cid2);
+          var client2 = State.clients.find(function (x) { return x.id === cid2; });
+          UI.renderAbonementInfo(client2);
+          UI.renderClients();
+          UI.renderSchedule();
+          UI.showToast('Абонемент сброшен');
+          break;
+        }
+        case 'client-open': Controllers.openClientModal(el.dataset.id); break;
+        case 'client-delete': Controllers.deleteClient(); break;
+        case 'pick-contacts': Controllers.pickContacts(); break;
+        case 'open-auth':
+          UI.$('authName').value = (State.currentUser && State.currentUser.name) || State.settings.profileName || '';
+          UI.$('authPhone').value = (State.currentUser && State.currentUser.login) || State.settings.profilePhone || '';
+          UI.openModal('authModal');
+          break;
+        case 'profile-save': Controllers.saveProfile(); break;
+        case 'profile-clear': UI.closeModal('authModal'); break;
+        case 'set-color': Controllers.setPrimaryColor(el.dataset.color); break;
+        case 'export': Controllers.exportData(); break;
+        case 'import-trigger': UI.$('importFile').click(); break;
+        case 'toggle-pay':
+          Controllers.togglePayment(el.dataset.class, el.dataset.client, el.checked);
+          break;
+        case 'register-local': {
+          (async function () {
+            var r = await Auth.registerLocal(
+              document.getElementById('regName').value,
+              document.getElementById('regLogin').value,
+              document.getElementById('regPass').value
+            );
+            if (!r.ok) { UI.showToast(r.error); return; }
+            await enterApp(r.user);
+            UI.showToast('Регистрация выполнена');
+          })();
+          break;
+        }
+        case 'login-local': {
+          (async function () {
+            var lr = await Auth.loginLocal(
+              document.getElementById('loginLogin').value,
+              document.getElementById('loginPass').value
+            );
+            if (!lr.ok) { UI.showToast(lr.error); return; }
+            await enterApp(lr.user);
+            UI.showToast('С возвращением!');
+          })();
+          break;
+        }
+        case 'show-login': showAuthGate('login'); break;
+        case 'show-register': showAuthGate('register'); break;
+        case 'yandex-login': Auth.startYandexOAuth(); break;
+        case 'save-yandex-clientid': {
+          var input = document.getElementById('authYandexClientId');
+          var val = input ? input.value.trim() : '';
+          if (!val) { UI.showToast('Вставьте ClientID'); break; }
+          Auth.saveYandexClientId(val);
+          // синхронизируем поле в настройках, если оно есть
+          var sInput = document.getElementById('settingYandexClientId');
+          if (sInput) sInput.value = val;
+          UI.showToast('ClientID сохранён — можно входить через Яндекс');
+          var hint = document.getElementById('yandexHint');
+          if (hint) hint.textContent = 'ClientID сохранён ✓';
+          break;
+        }
+        case 'logout':
+          if (!confirm('Выйти из аккаунта? Данные в облаке (Яндекс.Диск) сохранятся.')) break;
+          Auth.logout();
+          showAuthGate('login');
+          UI.showToast('Вы вышли');
+          break;
+        case 'cloud-sync-now': {
+          (async function () {
+            if (!Cloud.canSync()) {
+              UI.showToast('Синхронизация доступна только после входа через Яндекс ID');
+              return;
+            }
+            UI.showToast('Синхронизация…');
+            var res = await Cloud.syncOnLogin();
+            UI.applyTheme();
+            UI.renderSchedule();
+            UI.renderClients();
+            if (res.ok) UI.showToast(res.reason === 'pulled' ? 'Загружено из облака' : 'Сохранено в облако');
+            else UI.showToast('Не удалось синхронизировать');
+            var el = document.getElementById('syncStatus');
+            if (el) el.textContent = Cloud.canSync()
+              ? ('☁ Активна · ' + new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }))
+              : 'Только локально';
+          })();
+          break;
+        }
+        case 'cloud-diagnose': {
+          (async function () {
+            var box = document.getElementById('cloudDiagnostics');
+            if (!box) return;
+            box.classList.remove('hidden');
+            box.textContent = 'Проверяю…';
+            try {
+              box.textContent = await Cloud.diagnose();
+            } catch (err) {
+              box.textContent = 'Ошибка проверки: ' + err.message;
+            }
+          })();
+          break;
+        }
+      }
+    });
+
+    document.body.addEventListener('click', function (e) {
+      var closer = e.target.closest('[data-close]');
+      if (closer) UI.closeModal(closer.dataset.close);
+      if (e.target.classList.contains('modal-overlay')) e.target.classList.remove('show');
+    });
+
+    UI.$('clientForm').addEventListener('submit', function (e) { Controllers.saveClient(e); });
+    UI.$('classForm').addEventListener('submit', function (e) { Controllers.saveClass(e); });
+    var clubMemberForm = UI.$('clubMemberForm');
+    if (clubMemberForm) clubMemberForm.addEventListener('submit', function (e) { Controllers.saveClubMember(e); });
+    var clubGroupForm = UI.$('clubGroupForm');
+    if (clubGroupForm) clubGroupForm.addEventListener('submit', function (e) { Controllers.saveClubGroup(e); });
+    var classTitleEl = UI.$('classTitle');
+    if (classTitleEl) {
+      classTitleEl.addEventListener('input', function () {
+        var cb = UI.$('classIsGroup');
+        if (!cb || cb.dataset.userTouched === '1') return;
+        // Не снимаем галочку «групповое», если уже стоит — только подсказываем включить
+        if (cb.checked) return;
+        if (Domain.isGroupClassTitle(classTitleEl.value)) cb.checked = true;
+      });
+    }
+    var classIsGroupEl = UI.$('classIsGroup');
+    if (classIsGroupEl) {
+      classIsGroupEl.addEventListener('change', function () {
+        classIsGroupEl.dataset.userTouched = '1';
+      });
+    }
+    UI.$('clientSearch').addEventListener('input', function () { UI.renderClients(); });
+    UI.$('weekPicker').addEventListener('change', function (e) { Controllers.onJumpToDate(e.target.value); });
+    UI.$('settingCalendarName').addEventListener('change', function () { Controllers.saveSettingsFromForm(); });
+    UI.$('settingDark').addEventListener('change', function () { Controllers.saveSettingsFromForm(); });
+    UI.$('settingColor').addEventListener('change', function () { Controllers.saveSettingsFromForm(); });
+    UI.$('styleOptions').addEventListener('click', function (e) {
+      var opt = e.target.closest('[data-style]');
+      if (opt) Controllers.setCalStyle(opt.dataset.style);
+    });
+    UI.$('importFile').addEventListener('change', function (e) {
+      Controllers.importData(e.target.files[0]);
+      e.target.value = '';
+    });
+    var contactsFile = UI.$('contactsFileInput');
+    if (contactsFile) {
+      contactsFile.addEventListener('change', function (e) {
+        var f = e.target.files && e.target.files[0];
+        if (f) Controllers.importContactsFile(f);
+        e.target.value = '';
+      });
+    }
+    UI.initTimePicker();
+    UI.updateContactsStatus();
+
+    // Duration chips
+    var chips = UI.$('durationChips');
+    if (chips) {
+      chips.addEventListener('click', function (e) {
+        var btn = e.target.closest('[data-duration]');
+        if (btn) UI.setDuration(btn.dataset.duration);
+      });
+      var custom = UI.$('durationCustom');
+      if (custom) {
+        custom.addEventListener('input', function () {
+          if (custom.value) UI.setDuration(custom.value);
+        });
+      }
+    }
+
+    // Закрытие модалок по Esc
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape' && e.keyCode !== 27) return;
+      document.querySelectorAll('.modal-overlay.show').forEach(function (m) {
+        m.classList.remove('show');
+      });
+    });
+  }
+
+  function setupPwaManifest() {
+    try {
+      var icon = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E💃%3C/text%3E%3C/svg%3E";
+      var manifest = {
+        name: 'Танцевальный тренер',
+        short_name: 'Танцы',
+        description: 'Учёт клиентов и занятий танцевального тренера',
+        start_url: '.',
+        display: 'standalone',
+        background_color: '#fdf2f4',
+        theme_color: '#e11d48',
+        icons: [
+          { src: icon, sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' }
+        ]
+      };
+      var blob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+      var url = URL.createObjectURL(blob);
+      var link = document.getElementById('appManifestLink');
+      if (link) link.href = url;
+    } catch (err) {
+      console.warn('PWA manifest', err);
+    }
+  }
+
+  async function enterApp(user) {
+    State.currentUser = user;
+    State.hydrate(Storage.loadKey(State.dataKey()));
+    if (!State.settings.profileName) {
+      State.settings.profileName = user.name || '';
+    }
+    document.getElementById('authGate').classList.add('hidden');
+    document.getElementById('appShell').classList.remove('hidden');
+
+    // Облачная синхронизация для Яндекс-аккаунтов
+    if (user.yandexId && Auth.getYandexToken()) {
+      try {
+        var syncRes = await Cloud.syncOnLogin();
+        if (syncRes.ok && syncRes.reason === 'pulled') {
+          UI.showToast('Данные загружены с Яндекс.Диска');
+        } else if (syncRes.ok && syncRes.reason === 'uploaded-local') {
+          UI.showToast('Локальные данные сохранены в облако');
+        } else if (!syncRes.ok && syncRes.reason === 'no-token') {
+          /* noop */
+        }
+      } catch (e) {
+        console.error('[syncOnLogin]', e);
+        UI.showToast('Не удалось синхронизировать с облаком');
+      }
+    } else if (!user.yandexId) {
+      // Локальный аккаунт — напомнить про ограничения
+      setTimeout(function () {
+        UI.showToast('Локальный аккаунт: данные только на этом устройстве');
+      }, 600);
+    }
+
+    try { Services.syncAllGroupClasses(); } catch (e) { console.error(e); }
+    State.currentWeekStart = Domain.getMonday(new Date());
+    State.selectedDate = Domain.formatDate(new Date());
+    UI.applyTheme();
+    UI.renderSchedule();
+    UI.renderClients();
+  }
+
+  function showAuthGate(mode) {
+    document.getElementById('authGate').classList.remove('hidden');
+    document.getElementById('appShell').classList.add('hidden');
+    var reg = document.getElementById('authPanelRegister');
+    var log = document.getElementById('authPanelLogin');
+    if (mode === 'login') {
+      reg.classList.add('hidden');
+      log.classList.remove('hidden');
+    } else {
+      log.classList.add('hidden');
+      reg.classList.remove('hidden');
+    }
+    // подставить сохранённый ClientID
+    var yaInput = document.getElementById('authYandexClientId');
+    if (yaInput) yaInput.value = Auth.getYandexClientId() || '';
+  }
+
+  async function boot() {
+    bindEvents();
+    setupPwaManifest();
+    Storage.init();
+
+    console.log('[Танцевальный тренер] сборка', CONFIG.BUILD);
+    var buildEl = document.getElementById('buildInfo');
+    if (buildEl) buildEl.textContent = 'Сборка ' + CONFIG.BUILD;
+
+    // Возврат с Яндекс OAuth: слушатель deep link ставим ДО первого await,
+    // иначе событие приходит раньше подписки и токен теряется.
+    try {
+      if (!window.__yaDeepLinkBound && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
+        window.__yaDeepLinkBound = true;
+        window.Capacitor.Plugins.App.addListener('appUrlOpen', function (data) {
+          var t = Auth.parseTokenFromUrl(data && data.url);
+          if (t && window.__onYandexToken) window.__onYandexToken(t, '');
+        });
+      }
+    } catch (e) { console.warn('OAuth deep link listener', e); }
+    var yaUser = await Auth.handleYandexRedirect();
+    if (yaUser) {
+      await enterApp(yaUser);
+      UI.showToast('Вход через Яндекс выполнен');
+      if (!Storage.available) setTimeout(function () { UI.showToast('Данные не сохраняются (предпросмотр)'); }, 800);
+      return;
+    }
+
+    var session = Auth.getSessionUser();
+    if (session) {
+      await enterApp(session);
+    } else {
+      showAuthGate('register');
+    }
+
+    if (!Storage.available) {
+      setTimeout(function () { UI.showToast('Данные не сохраняются (предпросмотр)'); }, 800);
+    }
+  }
+
+  /**
+   * Вызывается из нативного кода (Android) или из deep link после Яндекс OAuth.
+   * token — access_token, expiresIn — строка с секундами (может быть пустой).
+   */
+  /**
+   * Вызывается из нативного кода Android после выбора контакта.
+   * Если открыта форма клиента — подставит в неё, иначе создаст клиента.
+   */
+  window.onContactPicked = function (name, phone) {    try {
+      Controllers._ingestContactList([{
+        name: (name || '').trim(),
+        phone: Domain.formatPhoneInput(phone || '')
+      }]);
+    } catch (e) {
+      console.error('[onContactPicked]', e);
+      UI.showToast('Не удалось добавить контакт');
+    }
+  };
+
+  window.__onYandexToken = async function (token, expiresIn) {
+    if (!token) { UI.showToast('Токен не получен'); return; }
+    try {
+      localStorage.setItem('dance_trainer_ya_token', token);
+      if (expiresIn) {
+        localStorage.setItem('dance_trainer_ya_token_exp', String(Date.now() + parseInt(expiresIn, 10) * 1000));
+      }
+    } catch (e) {}
+    try {
+      window.location.hash = 'access_token=' + encodeURIComponent(token) +
+        (expiresIn ? '&expires_in=' + encodeURIComponent(expiresIn) : '');
+      var user = await Auth.handleYandexRedirect();
+      if (user) {
+        await enterApp(user);
+        UI.showToast('Вход через Яндекс выполнен');
+      }
+    } catch (e) {
+      console.error(e);
+      UI.showToast('Не удалось войти через Яндекс');
+    }
+  };
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+
+  /** Отладка: window.DanceTrainer.State / Services / Domain */
+  window.DanceTrainer = { CONFIG: CONFIG, Storage: Storage, State: State, Domain: Domain, Auth: Auth, Cloud: Cloud, Services: Services, UI: UI, Controllers: Controllers };
+})();
+
+</script>
+
+<script>
+  
+    // Deep link после Яндекс OAuth (Capacitor). Основная подписка стоит в boot(),
+    // эта — страховка на случай, если Capacitor поднялся позже.
+    window.setupNativeOAuthListener = function () {
+      try {
+        if (window.__yaDeepLinkBound) return;
+        if (!window.Capacitor || !Capacitor.Plugins || !Capacitor.Plugins.App) return;
+        window.__yaDeepLinkBound = true;
+        Capacitor.Plugins.App.addListener('appUrlOpen', function (data) {
+          var token = window.DanceTrainer && DanceTrainer.Auth.parseTokenFromUrl(data && data.url);
+          if (token && window.__onYandexToken) window.__onYandexToken(token, '');
+        });
+      } catch (e) { console.warn('OAuth deep link listener', e); }
+    };
+
+  // Offline shell. В нативной обёртке файлы и так локальные — SW не нужен
+  // (и его регистрация раньше валилась 404, т.к. sw.js не было в репозитории).
+  if (!window.AndroidBridge && 'serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      if (window.setupNativeOAuthListener) setupNativeOAuthListener();
+      navigator.serviceWorker.register('./sw.js').catch(function (e) {
+        console.warn('SW register failed', e);
+      });
+    });
+  }
+  // Capacitor: статус сети (если плагин доступен)
+  window.addEventListener('DOMContentLoaded', async function () {
+    try {
+      if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Network) {
+        var Network = window.Capacitor.Plugins.Network;
+        var status = await Network.getStatus();
+        window.__isOnline = status.connected;
+        Network.addListener('networkStatusChange', function (s) {
+          window.__isOnline = s.connected;
+          if (window.UI && UI.showToast) {
+            UI.showToast(s.connected ? 'Сеть появилась' : 'Офлайн-режим');
+          }
+        });
+      }
+    } catch (e) { console.warn(e); }
+  });
+</script>
+
+</body>
+</html>
