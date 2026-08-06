@@ -982,15 +982,13 @@
             <button type="button" class="btn btn-secondary btn-sm" data-action="cloud-sync-now" style="width:100%;">Обновить из облака</button>
             <button type="button" class="btn btn-secondary btn-sm" data-action="cloud-diagnose" style="width:100%;margin-top:6px;">Проверить синхронизацию</button>
             <pre id="cloudDiagnostics" class="hidden" style="margin-top:8px;padding:10px;border-radius:10px;background:rgba(0,0,0,0.05);font-size:0.7rem;line-height:1.5;white-space:pre-wrap;word-break:break-word;"></pre>
-            <div id="buildInfo" style="margin-top:8px;font-size:0.68rem;opacity:0.75;"></div>
-            <div id="buildStamp" style="margin-top:8px;font-size:0.68rem;opacity:0.75;"></div>
+            <div id="buildVersion" style="margin-top:8px;font-size:0.68rem;opacity:0.75;text-align:center;color:var(--text-muted);">сборка —</div>
           </div>
           <p style="margin-top:8px;font-size:0.72rem;opacity:0.9;">При входе через Яндекс ID данные пишутся в папку приложения на Яндекс.Диске. Локальный аккаунт (пароль) — только на этом устройстве; для синхронизации используйте Яндекс ID.</p>
         </div>
         <button type="button" class="btn btn-danger btn-block btn-sm" data-action="export">📤 Экспорт данных</button>
         <button type="button" class="btn btn-secondary btn-block btn-sm mt-2" data-action="import-trigger">📥 Импорт данных</button>
         <input type="file" id="importFile" accept="application/json" class="hidden">
-        <div id="buildVersion" style="margin-top:14px;text-align:center;font-size:0.68rem;color:var(--text-muted);opacity:0.8;">сборка —</div>
       </div>
     </div>
   </div>
@@ -1217,9 +1215,9 @@
    * 1. CONFIG — константы
    * ========================================================= */
   const CONFIG = {
-    /* Номер сборки. Меняется при каждой правке — виден в шапке и в Настройках.
+    /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-06 · 4',
+    BUILD: '2026-08-06 · 5',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -1232,12 +1230,6 @@
       calStyle: 'standard', profileName: '', profilePhone: '',
       yandexClientId: ''
     },
-    /* Метка сборки — видна в Настройках. Нужна, чтобы сразу понимать,
-       какая версия файла реально открыта на устройстве. */
-    BUILD: '2026-08-06 · fix-5',
-    /* Версия сборки — видна в Настройках. Меняйте при каждой заливке,
-       чтобы сразу понимать, какой файл реально открыт в приложении. */
-    BUILD: '2026-08-06 · 3',
     /* ClientID можно задать здесь или в Настройках */
     YANDEX_CLIENT_ID: 'ca84af634c284a99b2a6ab6ce1d9b378'
   };
@@ -2614,7 +2606,7 @@
       this.$('appTitle').textContent = s.calendarName ? '💃 ' + s.calendarName : '💃 Танцевальный тренер';
       var uname = (State.currentUser && State.currentUser.name) || s.profileName || '';
       var ulogin = (State.currentUser && State.currentUser.login) || s.profilePhone || '';
-      this.$('appSubtitle').textContent = (uname ? (uname + (ulogin ? ' · ' + ulogin : '')) : 'Учёт клиентов и занятий') + ' · сб. ' + CONFIG.BUILD;
+      this.$('appSubtitle').textContent = uname ? (uname + (ulogin ? ' · ' + ulogin : '')) : 'Учёт клиентов и занятий';
       this.$('settingCalendarName').value = s.calendarName || '';
       this.$('settingDark').checked = !!s.dark;
       this.$('settingColor').value = s.primary || '#e11d48';
@@ -3597,13 +3589,6 @@
       if (tab) UI.switchTab(tab.dataset.tab);
     });
 
-    /* —— Метка сборки в Настройках —— */
-    (function () {
-      var stamp = document.getElementById('buildStamp');
-      if (stamp) stamp.textContent = 'Версия файла: ' + CONFIG.BUILD;
-      console.log('[Танцевальный тренер] сборка', CONFIG.BUILD);
-    })();
-
     /* —— Маска телефона для всех полей type="tel" ——
        Ввод только цифр, формат +7 999 123-45-67, ровно 11 цифр. */
     Array.prototype.forEach.call(document.querySelectorAll('input[type="tel"]'), function (el) {
@@ -3982,10 +3967,6 @@
     bindEvents();
     setupPwaManifest();
     Storage.init();
-
-    console.log('[Танцевальный тренер] сборка', CONFIG.BUILD);
-    var buildEl = document.getElementById('buildInfo');
-    if (buildEl) buildEl.textContent = 'Сборка ' + CONFIG.BUILD;
 
     // Возврат с Яндекс OAuth: слушатель deep link ставим ДО первого await,
     // иначе событие приходит раньше подписки и токен теряется.
