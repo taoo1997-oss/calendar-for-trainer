@@ -1617,6 +1617,12 @@
       }
       return id;
     },
+    /** Нативная Android-обёртка (WebView + JavascriptInterface) */
+    isNativeBridge() {
+      try {
+        return !!(window.AndroidBridge && window.AndroidBridge.startYandexAuth);
+      } catch (e) { return false; }
+    },
     /** Capacitor / native? */
     isNativeApp() {
       try {
@@ -1625,6 +1631,9 @@
     },
     /** Redirect URI: в APK — deep link, на сайте — текущий URL */
     getOAuthRedirectUri() {
+      if (this.isNativeBridge()) {
+        try { return window.AndroidBridge.redirectUri(); } catch (e) { return 'dancetrainer://oauth'; }
+      }
       if (this.isNativeApp()) {
         // Кастомная схема → Android вернёт в приложение, а не в Chrome/localhost
         return 'dancetrainer://oauth';
@@ -1646,7 +1655,7 @@
         return;
       }
       var redirect = this.getOAuthRedirectUri();
-      if (window.location.protocol === 'file:' && !this.isNativeApp()) {
+      if (window.location.protocol === 'file:' && !this.isNativeApp() && !this.isNativeBridge()) {
         UI.showToast('Яндекс ID работает только по https:// (залейте на хостинг)');
         return;
       }
@@ -1661,6 +1670,12 @@
         + '&redirect_uri=' + encodeURIComponent(redirect)
         + '&scope=' + encodeURIComponent(scope)
         + '&state=' + encodeURIComponent(state);
+      if (this.isNativeBridge()) {
+        // Открываем авторизацию в отдельном нативном окне.
+        // Свой WebView никуда не уходит -> нечему белеть, состояние не теряется.
+        try { window.AndroidBridge.startYandexAuth(url); } catch (e) { UI.showToast('Не удалось открыть окно входа'); }
+        return;
+      }
       window.location.href = url;
     },
     /** Разбор токена из произвольного URL (deep link или hash) */
@@ -3731,8 +3746,17 @@
     setupPwaManifest();
     Storage.init();
 
-    // Возврат с Яндекс OAuth
-    if (window.setupNativeOAuthListener) setupNativeOAuthListener();
+    // Возврат с Яндекс OAuth: слушатель deep link ставим ДО первого await,
+    // иначе событие приходит раньше подписки и токен теряется.
+    try {
+      if (!window.__yaDeepLinkBound && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
+        window.__yaDeepLinkBound = true;
+        window.Capacitor.Plugins.App.addListener('appUrlOpen', function (data) {
+          var t = Auth.parseTokenFromUrl(data && data.url);
+          if (t && window.__onYandexToken) window.__onYandexToken(t, '');
+        });
+      }
+    } catch (e) { console.warn('OAuth deep link listener', e); }
     var yaUser = await Auth.handleYandexRedirect();
     if (yaUser) {
       await enterApp(yaUser);
@@ -3753,6 +3777,32 @@
     }
   }
 
+  /**
+   * Вызывается из нативного кода (Android) или из deep link после Яндекс OAuth.
+   * token — access_token, expiresIn — строка с секундами (может быть пустой).
+   */
+  window.__onYandexToken = async function (token, expiresIn) {
+    if (!token) { UI.showToast('Токен не получен'); return; }
+    try {
+      localStorage.setItem('dance_trainer_ya_token', token);
+      if (expiresIn) {
+        localStorage.setItem('dance_trainer_ya_token_exp', String(Date.now() + parseInt(expiresIn, 10) * 1000));
+      }
+    } catch (e) {}
+    try {
+      window.location.hash = 'access_token=' + encodeURIComponent(token) +
+        (expiresIn ? '&expires_in=' + encodeURIComponent(expiresIn) : '');
+      var user = await Auth.handleYandexRedirect();
+      if (user) {
+        await enterApp(user);
+        UI.showToast('Вход через Яндекс выполнен');
+      }
+    } catch (e) {
+      console.error(e);
+      UI.showToast('Не удалось войти через Яндекс');
+    }
+  };
+
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
 
@@ -3764,21 +3814,23 @@
 
 <script>
   
-    // Deep link после Яндекс OAuth (Capacitor)
+    // Deep link после Яндекс OAuth (Capacitor). Основная подписка стоит в boot(),
+    // эта — страховка на случай, если Capacitor поднялся позже.
     window.setupNativeOAuthListener = function () {
       try {
+        if (window.__yaDeepLinkBound) return;
         if (!window.Capacitor || !Capacitor.Plugins || !Capacitor.Plugins.App) return;
+        window.__yaDeepLinkBound = true;
         Capacitor.Plugins.App.addListener('appUrlOpen', function (data) {
-          var token = Auth.parseTokenFromUrl(data && data.url);
-          if (!token) return;
-          window.location.hash = 'access_token=' + encodeURIComponent(token);
-          Auth.handleYandexRedirect();
+          var token = window.DanceTrainer && DanceTrainer.Auth.parseTokenFromUrl(data && data.url);
+          if (token && window.__onYandexToken) window.__onYandexToken(token, '');
         });
       } catch (e) { console.warn('OAuth deep link listener', e); }
     };
 
-  // Offline shell
-  if ('serviceWorker' in navigator) {
+  // Offline shell. В нативной обёртке файлы и так локальные — SW не нужен
+  // (и его регистрация раньше валилась 404, т.к. sw.js не было в репозитории).
+  if (!window.AndroidBridge && 'serviceWorker' in navigator) {
     window.addEventListener('load', function () {
       if (window.setupNativeOAuthListener) setupNativeOAuthListener();
       navigator.serviceWorker.register('./sw.js').catch(function (e) {
