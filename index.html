@@ -907,10 +907,67 @@
     .contacts-status {
       font-size: 0.75rem; color: var(--text-muted); margin-top: 6px; line-height: 1.4;
     }
+
+    /* —— Экран выбора контактов телефона —— */
+    .contact-pick-toolbar {
+      display: flex; gap: 8px; align-items: center; margin-bottom: 10px;
+    }
+    .contact-pick-toolbar input {
+      flex: 1; min-width: 0;
+    }
+    .contact-pick-count {
+      font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px;
+      display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    }
+    .contact-pick-list {
+      max-height: 46vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+      border: 1px solid var(--border); border-radius: 12px;
+    }
+    .contact-pick-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px; border-bottom: 1px solid var(--border);
+    }
+    .contact-pick-row:last-child { border-bottom: none; }
+    .contact-pick-row.is-existing { opacity: 0.55; }
+    .contact-pick-row input[type="checkbox"] {
+      width: 22px; height: 22px; flex: 0 0 auto; accent-color: var(--primary);
+    }
+    .contact-pick-info { flex: 1; min-width: 0; }
+    .contact-pick-name {
+      font-weight: 600; font-size: 0.9rem;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .contact-pick-phone { font-size: 0.75rem; color: var(--text-muted); }
+    .contact-pick-empty { padding: 24px 12px; text-align: center; color: var(--text-muted); font-size: 0.85rem; }
   </style>
 </head>
 <body>
   
+  <!-- Выбор контактов телефона (свой список, без зависимости от окна системы) -->
+  <div class="modal-overlay" id="contactsPickModal">
+    <div class="modal">
+      <div class="modal-handle"></div>
+      <div class="modal-header">
+        <h2>Контакты телефона</h2>
+        <button type="button" class="modal-close" data-close="contactsPickModal">✕</button>
+      </div>
+      <div class="contact-pick-toolbar">
+        <input type="text" id="contactsPickSearch" placeholder="Поиск по имени или номеру" autocomplete="off">
+      </div>
+      <div class="contact-pick-count">
+        <span id="contactsPickCount">—</span>
+        <button type="button" class="link-btn" data-action="contacts-toggle-all">Выбрать все</button>
+      </div>
+      <div class="contact-pick-list" id="contactsPickList"></div>
+      <button type="button" class="btn btn-primary btn-block mt-3" data-action="contacts-add-selected">
+        Добавить выбранных
+      </button>
+      <p class="text-sm text-muted" style="margin-top:8px;font-size:0.7rem;">
+        Серым отмечены те, кто уже есть в списке клиентов — они пропускаются.
+      </p>
+    </div>
+  </div>
+
   <!-- AUTH GATE: регистрация / вход -->
   <div id="authGate" class="auth-gate hidden">
     <div class="auth-gate-card">
@@ -926,7 +983,8 @@
       <div id="authPanelRegister">
         <div class="form-group"><label>Имя *</label><input type="text" id="regName" placeholder="Ваше имя" autocomplete="name"></div>
         <div class="form-group"><label>Телефон или email *</label><input type="text" id="regLogin" placeholder="+7… или email" autocomplete="username"></div>
-        <div class="form-group"><label>Пароль *</label><input type="password" id="regPass" placeholder="Минимум 4 символа" autocomplete="new-password"></div>
+        <div class="form-group"><label>Пароль *</label><input type="password" id="regPass" placeholder="Минимум 8 символов" autocomplete="new-password">
+          <p class="text-sm text-muted" style="margin-top:6px;font-size:0.7rem;">Номер можно вводить как +7… или 8… — это один и тот же аккаунт.</p></div>
         <button type="button" class="btn btn-primary btn-block" data-action="register-local">Зарегистрироваться</button>
         <div class="auth-divider"><span>или</span></div>
         <button type="button" class="btn btn-yandex btn-block" data-action="yandex-login">
@@ -1314,7 +1372,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-07 · 6',
+    BUILD: '2026-08-08 · 8',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -1705,6 +1763,43 @@
     normalizeLogin(login) {
       return (login || '').trim().toLowerCase();
     },
+    /** Похоже ли на email */
+    isEmail(login) {
+      return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(this.normalizeLogin(login));
+    },
+    /** Только цифры телефона, приведённые к 11 знакам с 7 в начале */
+    phoneDigits(login) {
+      var d = String(login || '').replace(/\D/g, '');
+      if (!d) return '';
+      if (d.charAt(0) === '8') d = '7' + d.slice(1);
+      if (d.length === 10) d = '7' + d;
+      return d;
+    },
+    /**
+     * Логин в человеческом виде: телефон всегда показываем как +7 (999) 123-45-67,
+     * даже если человек зарегистрировался, введя 8-ку.
+     */
+    displayLogin(login) {
+      if (!login) return '';
+      if (this.isEmail(login)) return this.normalizeLogin(login);
+      var d = this.phoneDigits(login);
+      if (d.length !== 11) return String(login);
+      return '+7 (' + d.slice(1, 4) + ') ' + d.slice(4, 7) + '-' + d.slice(7, 9) + '-' + d.slice(9, 11);
+    },
+    /** Проверка логина при регистрации: либо email, либо телефон из 11 цифр */
+    validateLogin(login) {
+      var raw = this.normalizeLogin(login);
+      if (!raw) return { ok: false, error: 'Укажите телефон или email' };
+      if (this.isEmail(raw)) return { ok: true, login: raw, kind: 'email' };
+      if (/[a-zа-яё@]/i.test(raw)) {
+        return { ok: false, error: 'Введите номер телефона или корректный email' };
+      }
+      var d = this.phoneDigits(raw);
+      if (d.length !== 11 || d.charAt(0) !== '7') {
+        return { ok: false, error: 'Номер телефона должен быть из 11 цифр: +7… или 8…' };
+      }
+      return { ok: true, login: d, kind: 'phone' };
+    },
     /**
      * Ключ для сравнения логинов. Телефон приводится к 11 цифрам,
      * поэтому «89991234567», «+7 999 123-45-67» и «79991234567» — один аккаунт.
@@ -1713,30 +1808,57 @@
     loginKey(login) {
       var s = this.normalizeLogin(login);
       if (!s) return '';
-      if (/[a-zа-я@]/i.test(s)) return s;          // это email или имя
-      var d = s.replace(/\D/g, '');
-      if (!d) return s;
-      if (d.charAt(0) === '8') d = '7' + d.slice(1);
-      if (d.length === 10) d = '7' + d;
-      return d;
+      if (/[a-zа-яё@]/i.test(s)) return s;          // это email или имя
+      var d = this.phoneDigits(s);
+      return d || s;
+    },
+    /** Найти аккаунт по логину в любом написании (+7 / 8 / со скобками) */
+    findUserByLogin(login) {
+      var db = this.loadUsers();
+      var key = this.loginKey(login);
+      if (!key) return null;
+      var self = this;
+      return db.users.find(function (u) {
+        return self.loginKey(u.loginKey || u.login) === key;
+      }) || null;
+    },
+    /** Сколько аккаунтов заведено на этом устройстве — для диагностики */
+    accountsCount() {
+      var db = this.loadUsers();
+      return (db.users || []).length;
     },
     async registerLocal(name, login, password) {
       name = (name || '').trim();
-      login = this.normalizeLogin(login);
       password = password || '';
       if (!name) return { ok: false, error: 'Укажите имя' };
-      if (!login) return { ok: false, error: 'Укажите телефон или email' };
-      if (password.length < 4) return { ok: false, error: 'Пароль от 4 символов' };
-      var db = this.loadUsers();
-      var key = this.loginKey(login);
-      var self = this;
-      if (db.users.some(function (u) { return self.loginKey(u.login) === key; })) {
-        return { ok: false, error: 'Такой логин уже зарегистрирован' };
+
+      var v = this.validateLogin(login);
+      if (!v.ok) return { ok: false, error: v.error };
+
+      if (password.length < 8) {
+        return { ok: false, error: 'Пароль должен быть не короче 8 символов' };
       }
+
+      // Аккаунт уже есть — не создаём второй, а зовём войти.
+      // +7 999…, 8 999… и «+7 (999) …» — это один и тот же аккаунт.
+      var existing = this.findUserByLogin(v.login);
+      if (existing) {
+        return {
+          ok: false,
+          exists: true,
+          login: this.displayLogin(existing.loginKey || existing.login),
+          error: 'Аккаунт ' + this.displayLogin(existing.loginKey || existing.login) +
+                 ' уже зарегистрирован — войдите в него'
+        };
+      }
+
+      var db = this.loadUsers();
       var user = {
         id: Domain.uid(),
         name: name,
-        login: login,
+        login: v.login,        // каноничный вид: 79991234567 или email
+        loginKey: this.loginKey(v.login),
+        loginKind: v.kind,
         passHash: await this.hash(password),
         yandexId: null,
         createdAt: new Date().toISOString()
@@ -1744,21 +1866,30 @@
       db.users.push(user);
       db.sessionId = user.id;
       this.saveUsers(db);
+
+      // Проверяем, что запись действительно легла в хранилище.
+      // Если WebView не сохраняет localStorage, лучше сказать об этом сразу,
+      // чем оставить человека с «аккаунт не найден» при следующем входе.
+      var check = this.findUserByLogin(v.login);
+      if (!check) {
+        return { ok: false, error: 'Не удалось сохранить аккаунт: браузер блокирует хранилище' };
+      }
       return { ok: true, user: user };
     },
     async loginLocal(login, password) {
-      login = this.normalizeLogin(login);
       password = password || '';
-      if (!login) return { ok: false, error: 'Введите телефон или email' };
+      if (!this.normalizeLogin(login)) return { ok: false, error: 'Введите телефон или email' };
       if (!password) return { ok: false, error: 'Введите пароль' };
       var db = this.loadUsers();
-      var key = this.loginKey(login);
-      var self = this;
-      var user = db.users.find(function (u) { return self.loginKey(u.login) === key; });
+      var user = this.findUserByLogin(login);
       if (!user) {
+        var total = (db.users || []).length;
         return {
           ok: false,
-          error: 'Аккаунт не найден на этом устройстве. Локальный вход работает только там, где вы регистрировались. Для доступа с любого устройства войдите через Яндекс ID.'
+          notFound: true,
+          error: total === 0
+            ? 'На этом устройстве ещё нет ни одного аккаунта — сначала зарегистрируйтесь'
+            : 'Аккаунт с таким логином не найден. Локальный вход работает только на том устройстве, где вы регистрировались. Для доступа с любого устройства входите через Яндекс ID.'
         };
       }
       if (!user.passHash) return { ok: false, error: 'Этот аккаунт привязан к Яндекс ID — нажмите «Войти через Яндекс ID»' };
@@ -1988,8 +2119,31 @@
      */
     async diagnose() {
       var lines = [];
+
+      /* Блок «где мы работаем». Без него невозможно понять, почему
+         не открываются контакты и куда уехал вход через Яндекс —
+         почти всегда причина в том, что открыт сайт, а не приложение. */
+      var native = !!(window.__isNativeApp && window.__isNativeApp());
+      lines.push('Сборка: ' + CONFIG.BUILD);
+      lines.push('Где открыто: ' + (native ? 'ПРИЛОЖЕНИЕ (APK)' : 'САЙТ в браузере'));
+      lines.push('Мост контактов: ' +
+        (window.AndroidContacts && typeof window.AndroidContacts.readContacts === 'function'
+          ? 'есть (список внутри приложения)'
+          : (window.AndroidContacts ? 'старый, только по одному контакту' : 'НЕТ')));
+      lines.push('Вход через Яндекс: ' +
+        (window.AndroidBridge && typeof window.AndroidBridge.startYandexAuth === 'function'
+          ? 'окно внутри приложения'
+          : 'через браузер'));
+      lines.push('Отступы из Android: ' +
+        (document.documentElement.getAttribute('data-native-insets') ? 'да' : 'нет'));
+      lines.push('Аккаунтов на устройстве: ' + Auth.accountsCount());
+      lines.push('—');
+
       var user = State.currentUser;
-      lines.push('Аккаунт: ' + (user ? (user.login || user.name || user.id) : 'нет'));
+      lines.push('Аккаунт: ' + (user ? (Auth.displayLogin(user.loginKey || user.login) || user.name || user.id) : 'нет'));
+      lines.push('Аккаунтов на устройстве: ' + Auth.accountsCount());
+      lines.push('Хранилище: ' + (Storage.available ? 'работает' : 'НЕДОСТУПНО — данные не сохранятся!'));
+      lines.push('Адрес страницы: ' + location.origin);
       lines.push('Тип входа: ' + (user && user.yandexId ? 'Яндекс ID' : 'локальный (пароль)'));
 
       var token = Auth.getYandexToken();
@@ -2818,13 +2972,52 @@
       t.classList.add('show');
       setTimeout(function () { t.classList.remove('show'); }, 2500);
     },
+    renderContactsPick(query) {
+      var box = this.$('contactsPickList');
+      if (!box) return;
+      var q = (query || '').trim().toLowerCase();
+      var pool = Controllers._contactsPool || [];
+      var html = '';
+      var shown = 0;
+      pool.forEach(function (c, i) {
+        var name = (c.name || '').trim();
+        var phone = (c.phone || '').trim();
+        if (q) {
+          var hay = (name + ' ' + phone.replace(/\D/g, '')).toLowerCase();
+          if (hay.indexOf(q) === -1 && phone.replace(/\D/g, '').indexOf(q.replace(/\D/g, '')) === -1) return;
+        }
+        shown++;
+        var exists = Services.clientExists(name, phone);
+        html += '<label class="contact-pick-row' + (exists ? ' is-existing' : '') + '">' +
+          '<input type="checkbox" data-index="' + i + '"' + (exists ? ' disabled' : '') + '>' +
+          '<span class="contact-pick-info">' +
+            '<span class="contact-pick-name">' + Domain.escapeHtml(name || 'Без имени') + '</span>' +
+            '<span class="contact-pick-phone">' + Domain.escapeHtml(phone || '') +
+              (exists ? ' · уже в клиентах' : '') + '</span>' +
+          '</span>' +
+        '</label>';
+      });
+      box.innerHTML = shown
+        ? html
+        : '<div class="contact-pick-empty">Ничего не найдено</div>';
+      box.onchange = function () { UI.updateContactsPickCount(); };
+      this.updateContactsPickCount();
+    },
+    updateContactsPickCount() {
+      var el = this.$('contactsPickCount');
+      if (!el) return;
+      var total = document.querySelectorAll('#contactsPickList input[type=checkbox]').length;
+      var picked = document.querySelectorAll('#contactsPickList input[type=checkbox]:checked').length;
+      el.textContent = 'Показано: ' + total + ' · выбрано: ' + picked;
+    },
     updateContactsStatus() {
-      var hasNative = !!(window.AndroidContacts && window.AndroidContacts.pickContact);
+      var hasNative = !!(window.AndroidContacts &&
+        (window.AndroidContacts.readContacts || window.AndroidContacts.pickContact));
       var hasPicker = ('contacts' in navigator && 'ContactsManager' in window);
       var access = (State.settings && State.settings.contactsAccess) || '';
       var msg;
       if (hasNative) {
-        msg = 'Контакты телефона доступны — откроется системный выбор.';
+        msg = 'Контакты телефона доступны — откроется список с поиском и галочками.';
       } else if (hasPicker) {
         if (access === 'denied') msg = 'Доступ к контактам запрещён. Разрешите в настройках Safari/Chrome → Контакты или импортируйте файл.';
         else if (access === 'granted') msg = 'Системный выбор контактов доступен.';
@@ -2987,9 +3180,12 @@
       }
     },
     renderProfile() {
-      var name = (State.currentUser && State.currentUser.name) || State.settings.profileName || 'Гость';
-      var login = (State.currentUser && State.currentUser.login) || State.settings.profilePhone || '';
-      var via = State.currentUser && State.currentUser.yandexId ? ' · Яндекс ID' : '';
+      var u = State.currentUser;
+      var name = (u && u.name) || State.settings.profileName || 'Гость';
+      var rawLogin = (u && (u.loginKey || u.login)) || State.settings.profilePhone || '';
+      // Телефон всегда показываем как +7…, даже если регистрировались через 8…
+      var login = rawLogin ? Auth.displayLogin(rawLogin) : '';
+      var via = u && u.yandexId ? ' · Яндекс ID' : '';
       this.$('profileName').textContent = name;
       this.$('profilePhone').textContent = (login || 'Профиль') + via;
       this.$('profileAvatar').textContent = (name || '?')[0].toUpperCase();
@@ -3577,10 +3773,75 @@
       UI.renderClients();
       UI.showToast('Удалён');
     },
-    /** Импорт контактов: Contact Picker (Android Chrome) → иначе файл / вставка */
+    /* —— Свой экран выбора контактов —— */
+    _contactsPool: [],
+    /**
+     * Открыть список контактов телефона внутри приложения.
+     * Раньше мы отдавали выбор системному окну Android, но на разных
+     * оболочках (vivo, Xiaomi и т.д.) оно ведёт себя по-своему и умеет
+     * отдавать только один контакт за раз. Теперь список читаем сами
+     * и показываем свой экран с поиском и галочками.
+     */
+    openContactsPicker: function (list) {
+      Controllers._contactsPool = (list || []).filter(function (c) {
+        return c && (c.name || c.phone);
+      });
+      UI.renderContactsPick('');
+      UI.openModal('contactsPickModal');
+      var search = UI.$('contactsPickSearch');
+      if (search) {
+        search.value = '';
+        search.oninput = function () { UI.renderContactsPick(search.value); };
+      }
+    },
+    toggleAllContacts: function () {
+      var boxes = document.querySelectorAll('#contactsPickList input[type=checkbox]:not(:disabled)');
+      var allOn = true;
+      boxes.forEach(function (b) { if (!b.checked) allOn = false; });
+      boxes.forEach(function (b) { b.checked = !allOn; });
+      UI.updateContactsPickCount();
+    },
+    addSelectedContacts: function () {
+      var boxes = document.querySelectorAll('#contactsPickList input[type=checkbox]:checked:not(:disabled)');
+      var picked = [];
+      boxes.forEach(function (b) {
+        var i = parseInt(b.dataset.index, 10);
+        var c = Controllers._contactsPool[i];
+        if (c) picked.push(c);
+      });
+      if (!picked.length) { UI.showToast('Никто не выбран'); return; }
+      UI.closeModal('contactsPickModal');
+      Controllers._ingestContactList(picked);
+    },
+    /** Импорт контактов: свой список из Android → Contact Picker → файл / вставка */
     pickContacts: async function () {
-      // 0) Нативный мост APK (WebView). Contact Picker API внутри WebView
-      //    не существует, поэтому выбор контакта делает сам Android.
+      // 0) Нативный мост APK: читаем телефонную книгу целиком и показываем свой экран.
+      if (window.AndroidContacts && typeof window.AndroidContacts.readContacts === 'function') {
+        try {
+          var raw = window.AndroidContacts.readContacts();
+          if (raw === 'NEED_PERMISSION') {
+            // Android покажет системный запрос; после ответа вызовется
+            // window.onContactsPermission и мы попробуем ещё раз.
+            UI.showToast('Разрешите доступ к контактам');
+            return;
+          }
+          if (raw === 'DENIED') {
+            UI.showToast('Доступ к контактам запрещён. Разрешите его в настройках приложения.');
+            return;
+          }
+          var parsed = JSON.parse(raw || '[]');
+          if (!parsed.length) {
+            UI.showToast('В телефонной книге нет контактов с номерами');
+            return;
+          }
+          Controllers.openContactsPicker(parsed);
+          return;
+        } catch (err) {
+          console.warn('[pickContacts] readContacts', err);
+          // упадём в старый путь ниже
+        }
+      }
+      // 0b) Старый мост (одиночный выбор системным окном)
       if (window.AndroidContacts && typeof window.AndroidContacts.pickContact === 'function') {
         try {
           window.AndroidContacts.pickContact();
@@ -3620,8 +3881,17 @@
       Controllers._showContactsFallback();
     },
     _showContactsFallback: function () {
+      /* Сюда попадаем, когда нативного моста нет. Почти всегда это значит,
+         что человек открыл САЙТ в браузере, а не установленное приложение —
+         телефонная книга из браузера недоступна в принципе. Раньше здесь
+         было написано про iPhone, и это сбивало с толку. */
+      var inBrowser = !(window.__isNativeApp && window.__isNativeApp());
+      var head = inBrowser
+        ? 'Сейчас открыт сайт в браузере, а не приложение.\n' +
+          'Телефонную книгу браузер не отдаёт — список контактов доступен только в установленном приложении.\n\n'
+        : 'Прямой доступ к телефонной книге на этом устройстве недоступен.\n\n';
       var choice = confirm(
-        'На этом устройстве системный выбор контактов недоступен (типично для iPhone).\n\n' +
+        head +
         'ОК — выбрать файл vCard/CSV из «Контакты»/Файлы.\n' +
         'Отмена — вставить список имён текстом.'
       );
@@ -4123,6 +4393,8 @@
         case 'client-open': Controllers.openClientModal(el.dataset.id); break;
         case 'client-delete': Controllers.deleteClient(); break;
         case 'pick-contacts': Controllers.pickContacts(); break;
+        case 'contacts-toggle-all': Controllers.toggleAllContacts(); break;
+        case 'contacts-add-selected': Controllers.addSelectedContacts(); break;
         case 'open-auth':
           UI.$('authName').value = (State.currentUser && State.currentUser.name) || State.settings.profileName || '';
           UI.$('authPhone').value = (State.currentUser && State.currentUser.login) || State.settings.profilePhone || '';
@@ -4138,26 +4410,48 @@
           break;
         case 'register-local': {
           (async function () {
+            var loginRaw = document.getElementById('regLogin').value;
             var r = await Auth.registerLocal(
               document.getElementById('regName').value,
-              document.getElementById('regLogin').value,
+              loginRaw,
               document.getElementById('regPass').value
             );
-            if (!r.ok) { UI.showToast(r.error); return; }
+            if (!r.ok) {
+              UI.showToast(r.error);
+              // Аккаунт уже есть — сразу открываем вход с подставленным логином
+              if (r.exists) {
+                showAuthGate('login');
+                var li = document.getElementById('loginLogin');
+                if (li) li.value = r.login || loginRaw;
+                var lp = document.getElementById('loginPass');
+                if (lp) { lp.value = ''; lp.focus(); }
+              }
+              return;
+            }
             await enterApp(r.user);
-            UI.showToast('Регистрация выполнена');
+            UI.showToast('Аккаунт создан: ' + Auth.displayLogin(r.user.login));
           })();
           break;
         }
         case 'login-local': {
           (async function () {
+            var loginRaw2 = document.getElementById('loginLogin').value;
             var lr = await Auth.loginLocal(
-              document.getElementById('loginLogin').value,
+              loginRaw2,
               document.getElementById('loginPass').value
             );
-            if (!lr.ok) { UI.showToast(lr.error); return; }
+            if (!lr.ok) {
+              UI.showToast(lr.error);
+              // Совсем нет аккаунтов — отправляем регистрироваться
+              if (lr.notFound && Auth.accountsCount() === 0) {
+                showAuthGate('register');
+                var ri = document.getElementById('regLogin');
+                if (ri) ri.value = loginRaw2;
+              }
+              return;
+            }
             await enterApp(lr.user);
-            UI.showToast('С возвращением!');
+            UI.showToast('С возвращением, ' + (lr.user.name || '') + '!');
           })();
           break;
         }
@@ -4444,6 +4738,18 @@
    * Вызывается из нативного кода Android после выбора контакта.
    * Если открыта форма клиента — подставит в неё, иначе создаст клиента.
    */
+  /**
+   * Вызывается из Android после ответа на запрос доступа к контактам.
+   * Если разрешили — сразу открываем список, чтобы не жать кнопку второй раз.
+   */
+  window.onContactsPermission = function (granted) {
+    if (granted === true || granted === 'true') {
+      Controllers.pickContacts();
+    } else {
+      UI.showToast('Без доступа к контактам импорт из телефона недоступен');
+    }
+  };
+
   window.onContactPicked = function (name, phone) {    try {
       Controllers._ingestContactList([{
         name: (name || '').trim(),
