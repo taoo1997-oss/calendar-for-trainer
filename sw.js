@@ -3,7 +3,7 @@
    поэтому в консоли всегда висела ошибка 404.
    Версию кэша поднимаем при каждой правке index.html, иначе телефон
    продолжает показывать старый файл. */
-const CACHE = 'dance-trainer-v6';
+const CACHE = 'dance-trainer-v7';
 const ASSETS = ['./', './index.html'];
 
 self.addEventListener('install', (e) => {

@@ -606,6 +606,11 @@
       position: fixed; inset: 0; background: rgba(28,25,23,0.35);
       z-index: 200; display: none; align-items: flex-end; justify-content: center;
     }
+    /* Список контактов вызывается из карточки «Новый клиент», то есть поверх
+       уже открытой модалки. У всех окон был одинаковый z-index, и список
+       уезжал ПОД карточку. Поднимаем его выше остальных. */
+    #contactsPickModal { z-index: 320; }
+    #contactsPickModal .modal { max-height: 86vh; }
     .modal-overlay.show { display: flex; }
     .modal {
       background: var(--card); border-radius: 24px 24px 0 0;
@@ -1372,7 +1377,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-08 · 8',
+    BUILD: '2026-08-08 · 9',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -1447,7 +1452,13 @@
     dataKey() {
       return this.currentUser ? CONFIG.STORAGE_KEY + '_' + this.currentUser.id : CONFIG.STORAGE_KEY;
     },
+    /** Отметка времени последнего изменения — нужна, чтобы при входе
+        понять, какая копия свежее: облачная или местная. */
+    touch() {
+      try { this.settings.updatedAt = new Date().toISOString(); } catch (e) {}
+    },
     persist() {
+      this.touch();
       if (!this.currentUser) return;
       Storage.saveKey(this.dataKey(), {
         clients: this.clients,
@@ -2108,6 +2119,30 @@
     PATH: 'app:/dance-trainer-data.json',
     _syncing: false,
     _lastPush: 0,
+    /* Пока не выполнена первая загрузка из облака, отправлять НЕЛЬЗЯ.
+       Раньше приложение стартовало с пустым состоянием, успевало отправить
+       эту пустоту на Диск и затирало настоящие данные — файл в облаке
+       становился размером в пару сотен байт. */
+    _initialSyncDone: false,
+
+    /** Сколько всего записей в наборе данных (0 = пусто) */
+    countRecords(d) {
+      if (!d) return 0;
+      return ((d.clients && d.clients.length) || 0) +
+             ((d.classes && d.classes.length) || 0) +
+             ((d.clubMembers && d.clubMembers.length) || 0) +
+             ((d.clubGroups && d.clubGroups.length) || 0);
+    },
+    localSnapshot() {
+      return {
+        clients: State.clients,
+        classes: State.classes,
+        clubMembers: State.clubMembers,
+        clubGroups: State.clubGroups,
+        settings: State.settings
+      };
+    },
+    localCount() { return this.countRecords(this.localSnapshot()); },
 
     canSync() {
       return !!(State.currentUser && State.currentUser.yandexId && Auth.getYandexToken());
@@ -2137,6 +2172,11 @@
       lines.push('Отступы из Android: ' +
         (document.documentElement.getAttribute('data-native-insets') ? 'да' : 'нет'));
       lines.push('Аккаунтов на устройстве: ' + Auth.accountsCount());
+      lines.push('Записей на устройстве: ' + Cloud.localCount() +
+        ' (клиентов ' + State.clients.length +
+        ', занятий ' + State.classes.length +
+        ', членов клуба ' + State.clubMembers.length + ')');
+      lines.push('Первая синхронизация: ' + (Cloud._initialSyncDone ? 'выполнена' : 'ещё нет'));
       lines.push('—');
 
       var user = State.currentUser;
@@ -2232,10 +2272,25 @@
       }
     },
 
-    /** Загрузить текущие данные на Диск */
-    async push() {
+    /**
+     * Загрузить текущие данные на Диск.
+     * force = true — отправить, даже если локально пусто (нужно, когда человек
+     * осознанно очистил всё сам).
+     */
+    async push(force) {
       if (!this.canSync()) return false;
       if (this._syncing) return false;
+
+      // Защита: пустое локальное состояние не должно затирать облако.
+      if (!force && this.localCount() === 0) {
+        var remote = await this.pull();
+        if (remote && this.countRecords(remote) > 0) {
+          console.warn('[Cloud.push] отменено: локально пусто, а в облаке есть данные');
+          UI.showToast('Отправка отменена: в облаке есть данные, а здесь пусто');
+          return false;
+        }
+      }
+
       this._syncing = true;
       try {
         var payload = {
@@ -2282,16 +2337,8 @@
     },
 
     /** После логина: подтянуть облако и слить с локальными данными */
-    async syncOnLogin() {
-      if (!this.canSync()) return { ok: false, reason: 'no-token' };
-      UI.showToast('Синхронизация с Яндекс.Диском…');
-      var remote = await this.pull();
-      if (!remote) {
-        // Файла ещё нет — заливаем локальные данные
-        var ok = await this.push();
-        return { ok: ok, reason: ok ? 'uploaded-local' : 'push-failed' };
-      }
-      // Берём облачную копию как источник истины (кросс-девайс)
+    /** Применить облачный набор данных к приложению */
+    _applyRemote(remote) {
       if (Array.isArray(remote.clients)) State.clients = remote.clients;
       if (Array.isArray(remote.classes)) State.classes = remote.classes;
       if (Array.isArray(remote.clubMembers)) State.clubMembers = remote.clubMembers;
@@ -2302,12 +2349,68 @@
       State.persist();
       try { Services.migrateAbonementDates(); } catch (e) {}
       try { Services.syncAllGroupClasses(); } catch (e) {}
-      return { ok: true, reason: 'pulled', updatedAt: remote.updatedAt };
+    },
+
+    /**
+     * Первая синхронизация после входа.
+     *
+     * Правило простое: пустое никогда не побеждает непустое.
+     * Раньше облако всегда считалось главным, поэтому свежеустановленное
+     * приложение затирало данные, а потом ещё и отправляло пустоту обратно.
+     */
+    async syncOnLogin() {
+      if (!this.canSync()) return { ok: false, reason: 'no-token' };
+      UI.showToast('Синхронизация с Яндекс.Диском…');
+
+      var localN = this.localCount();
+      var remote = await this.pull();
+      var remoteN = this.countRecords(remote);
+
+      var result;
+      if (!remote) {
+        // Файла ещё нет — заливаем локальные данные
+        this._initialSyncDone = true;
+        var okNew = await this.push(true);
+        result = { ok: okNew, reason: okNew ? 'uploaded-local' : 'push-failed' };
+      } else if (remoteN === 0 && localN > 0) {
+        // В облаке пусто, а здесь есть данные — облако НЕ применяем, а чиним его
+        this._initialSyncDone = true;
+        var okFix = await this.push(true);
+        UI.showToast('В облаке было пусто — загрузили данные с устройства');
+        result = { ok: okFix, reason: 'restored-cloud', localCount: localN };
+      } else if (remoteN > 0 && localN === 0) {
+        // Обычный случай на новом устройстве — забираем облако
+        this._applyRemote(remote);
+        this._initialSyncDone = true;
+        result = { ok: true, reason: 'pulled', updatedAt: remote.updatedAt, count: remoteN };
+      } else if (remoteN > 0 && localN > 0) {
+        // Данные есть и там, и там — берём копию посвежее
+        var localAt = State.settings && State.settings.updatedAt;
+        var remoteAt = remote.updatedAt;
+        var takeRemote = !localAt || (remoteAt && String(remoteAt) >= String(localAt));
+        if (takeRemote) {
+          this._applyRemote(remote);
+          result = { ok: true, reason: 'pulled', updatedAt: remote.updatedAt, count: remoteN };
+        } else {
+          this._initialSyncDone = true;
+          await this.push(true);
+          result = { ok: true, reason: 'pushed-newer-local', count: localN };
+        }
+      } else {
+        // Пусто и там, и там — синхронизировать нечего
+        result = { ok: true, reason: 'both-empty' };
+      }
+
+      this._initialSyncDone = true;
+      return result;
     },
 
     /** Отложенный push после изменений (не чаще раза в 2 сек) */
     schedulePush() {
       if (!this.canSync()) return;
+      // До первой успешной загрузки из облака ничего не отправляем,
+      // иначе стартовое пустое состояние затрёт настоящие данные.
+      if (!this._initialSyncDone) return;
       clearTimeout(this._pushTimer);
       this._pushTimer = setTimeout(function () {
         Cloud.push().then(function (ok) {
