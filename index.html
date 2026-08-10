@@ -1377,7 +1377,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-09 · 10',
+    BUILD: '2026-08-10 · 11',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -2124,6 +2124,7 @@
        эту пустоту на Диск и затирало настоящие данные — файл в облаке
        становился размером в пару сотен байт. */
     _initialSyncDone: false,
+    _lastSyncReason: '',
 
     /** Сколько всего записей в наборе данных (0 = пусто) */
     countRecords(d) {
@@ -2185,6 +2186,7 @@
         ', занятий ' + State.classes.length +
         ', членов клуба ' + State.clubMembers.length + ')');
       lines.push('Первая синхронизация: ' + (Cloud._initialSyncDone ? 'выполнена' : 'ещё нет'));
+      if (Cloud._lastSyncReason) lines.push('Итог синхронизации: ' + Cloud._lastSyncReason);
       lines.push('—');
 
       var user = State.currentUser;
@@ -2252,51 +2254,91 @@
     },
 
     /** Скачать данные с Диска (null если файла нет) */
-    async pull() {
-      if (!this.canSync()) return null;
+    /**
+     * Скачать файл с Диска и ЧЕСТНО сказать, что произошло.
+     *
+     * Раньше здесь был один общий null и на «файла нет», и на «запрос упал».
+     * Из-за этого одна неудачная попытка скачивания выглядела как чистый Диск,
+     * приложение бодро заливало туда своё пустое состояние и стирало всё.
+     * Теперь состояния разделены:
+     *   ok      — файл скачан, данные в .data
+     *   missing — файла действительно нет (404)
+     *   error   — спросить не получилось; трогать облако НЕЛЬЗЯ
+     */
+    async pullEx() {
+      if (!this.canSync()) return { status: 'error', reason: 'no-token' };
       try {
         var meta = await this._api('GET',
           'https://cloud-api.yandex.net/v1/disk/resources/download?path=' + encodeURIComponent(this.PATH));
-        if (meta.status === 404) return null;
+
+        if (meta.status === 404) return { status: 'missing' };
+
         if (!meta.ok) {
-          var errText = await meta.text();
-          console.warn('[Cloud.pull] meta', meta.status, errText);
+          var errText = '';
+          try { errText = await meta.text(); } catch (e) {}
+          console.warn('[Cloud.pullEx] meta', meta.status, errText);
           if (meta.status === 401 || meta.status === 403) {
             Auth.clearYandexToken();
             UI.showToast('Сессия Яндекс истекла — войдите снова');
-            return null;
+            return { status: 'error', reason: 'auth' };
           }
-          return null;
+          return { status: 'error', reason: 'http-' + meta.status };
         }
+
         var info = await meta.json();
-        if (!info.href) return null;
+        if (!info.href) return { status: 'error', reason: 'no-href' };
+
         var fileRes = await fetch(info.href);
-        if (!fileRes.ok) return null;
+        if (!fileRes.ok) return { status: 'error', reason: 'download-' + fileRes.status };
+
         var data = await fileRes.json();
-        return data;
+        if (!data || typeof data !== 'object') return { status: 'error', reason: 'bad-json' };
+        return { status: 'ok', data: data };
       } catch (e) {
-        console.error('[Cloud.pull]', e);
-        return null;
+        console.error('[Cloud.pullEx]', e);
+        return { status: 'error', reason: 'network' };
       }
     },
 
     /**
-     * Загрузить текущие данные на Диск.
-     * force = true — отправить, даже если локально пусто (нужно, когда человек
-     * осознанно очистил всё сам).
+     * То же самое, но с повторами: связь на телефоне бывает капризной,
+     * а одна осечка не должна превращаться в «облако пустое».
      */
-    async push(force) {
+    async pullExRetry(attempts) {
+      var n = attempts || 3;
+      var res = null;
+      for (var i = 0; i < n; i++) {
+        res = await this.pullEx();
+        if (res.status !== 'error') return res;
+        if (res.reason === 'auth') return res; // повторять бессмысленно
+        if (i < n - 1) await new Promise(function (r) { setTimeout(r, 800 * (i + 1)); });
+      }
+      return res;
+    },
+
+    /** Совместимость со старым кодом: данные или null */
+    async pull() {
+      var res = await this.pullEx();
+      return res.status === 'ok' ? res.data : null;
+    },
+
+    /**
+     * Загрузить текущие данные на Диск.
+     *
+     * Железное правило: пустое состояние в облако не уходит вообще никогда.
+     * Заливать «ничего» бессмысленно в любом случае — а вот стереть таким
+     * образом полгода работы можно за секунду. Ровно это и случалось.
+     *
+     * allowEmpty = true разрешено только при осознанной очистке данных самим
+     * человеком, и вызывается лишь из соответствующей кнопки.
+     */
+    async push(allowEmpty) {
       if (!this.canSync()) return false;
       if (this._syncing) return false;
 
-      // Защита: пустое локальное состояние не должно затирать облако.
-      if (!force && this.localCount() === 0) {
-        var remote = await this.pull();
-        if (remote && this.countRecords(remote) > 0) {
-          console.warn('[Cloud.push] отменено: локально пусто, а в облаке есть данные');
-          UI.showToast('Отправка отменена: в облаке есть данные, а здесь пусто');
-          return false;
-        }
+      if (!allowEmpty && this.localCount() === 0) {
+        console.warn('[Cloud.push] отменено: локально пусто');
+        return false;
       }
 
       this._syncing = true;
@@ -2371,19 +2413,34 @@
       UI.showToast('Синхронизация с Яндекс.Диском…');
 
       var localN = this.localCount();
-      var remote = await this.pull();
+      var pulled = await this.pullExRetry(3);
+
+      // Не смогли даже спросить Диск — НИЧЕГО не отправляем и не стираем.
+      // _initialSyncDone остаётся false, поэтому автоотправка тоже заблокирована.
+      if (pulled.status === 'error') {
+        console.warn('[syncOnLogin] Диск недоступен:', pulled.reason);
+        UI.showToast('Диск не ответил — данные не тронуты. Попробуйте «Обновить из облака»');
+        return { ok: false, reason: 'disk-unavailable', detail: pulled.reason };
+      }
+
+      var remote = pulled.status === 'ok' ? pulled.data : null;
       var remoteN = this.countRecords(remote);
 
       var result;
       if (!remote) {
-        // Файла ещё нет — заливаем локальные данные
+        // Файла на Диске действительно нет (404)
         this._initialSyncDone = true;
-        var okNew = await this.push(true);
-        result = { ok: okNew, reason: okNew ? 'uploaded-local' : 'push-failed' };
+        if (localN === 0) {
+          // И заливать нечего — это чистый старт, всё в порядке
+          result = { ok: true, reason: 'nothing-anywhere' };
+        } else {
+          var okNew = await this.push();
+          result = { ok: okNew, reason: okNew ? 'uploaded-local' : 'push-failed' };
+        }
       } else if (remoteN === 0 && localN > 0) {
         // В облаке пусто, а здесь есть данные — облако НЕ применяем, а чиним его
         this._initialSyncDone = true;
-        var okFix = await this.push(true);
+        var okFix = await this.push();
         UI.showToast('В облаке было пусто — загрузили данные с устройства');
         result = { ok: okFix, reason: 'restored-cloud', localCount: localN };
       } else if (remoteN > 0 && localN === 0) {
@@ -2401,7 +2458,7 @@
           result = { ok: true, reason: 'pulled', updatedAt: remote.updatedAt, count: remoteN };
         } else {
           this._initialSyncDone = true;
-          await this.push(true);
+          await this.push();
           result = { ok: true, reason: 'pushed-newer-local', count: localN };
         }
       } else {
@@ -2410,6 +2467,7 @@
       }
 
       this._initialSyncDone = true;
+      this._lastSyncReason = result.reason;
       return result;
     },
 
