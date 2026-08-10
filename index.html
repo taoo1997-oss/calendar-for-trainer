@@ -1133,6 +1133,7 @@
           <span id="syncStatus">Проверка…</span>
           <div style="margin-top:8px;">
             <button type="button" class="btn btn-secondary btn-sm" data-action="cloud-sync-now" style="width:100%;">Обновить из облака</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-action="cloud-push-now" style="width:100%;margin-top:6px;">Отправить в облако</button>
             <button type="button" class="btn btn-secondary btn-sm" data-action="cloud-diagnose" style="width:100%;margin-top:6px;">Проверить синхронизацию</button>
             <pre id="cloudDiagnostics" class="hidden" style="margin-top:8px;padding:10px;border-radius:10px;background:rgba(0,0,0,0.05);font-size:0.7rem;line-height:1.5;white-space:pre-wrap;word-break:break-word;"></pre>
           </div>
@@ -1377,7 +1378,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-10 · 11',
+    BUILD: '2026-08-10 · 12',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -2125,6 +2126,7 @@
        становился размером в пару сотен байт. */
     _initialSyncDone: false,
     _lastSyncReason: '',
+    _lastPullError: '',
 
     /** Сколько всего записей в наборе данных (0 = пусто) */
     countRecords(d) {
@@ -2187,6 +2189,7 @@
         ', членов клуба ' + State.clubMembers.length + ')');
       lines.push('Первая синхронизация: ' + (Cloud._initialSyncDone ? 'выполнена' : 'ещё нет'));
       if (Cloud._lastSyncReason) lines.push('Итог синхронизации: ' + Cloud._lastSyncReason);
+      if (Cloud._lastPullError) lines.push('Чтение с Диска не прошло: ' + Cloud._lastPullError);
       lines.push('—');
 
       var user = State.currentUser;
@@ -2418,11 +2421,13 @@
       // Не смогли даже спросить Диск — НИЧЕГО не отправляем и не стираем.
       // _initialSyncDone остаётся false, поэтому автоотправка тоже заблокирована.
       if (pulled.status === 'error') {
+        this._lastPullError = pulled.reason || 'unknown';
         console.warn('[syncOnLogin] Диск недоступен:', pulled.reason);
-        UI.showToast('Диск не ответил — данные не тронуты. Попробуйте «Обновить из облака»');
+        UI.showToast('Диск не ответил — данные не тронуты. Если данные тут есть, нажмите «Отправить в облако»');
         return { ok: false, reason: 'disk-unavailable', detail: pulled.reason };
       }
 
+      this._lastPullError = '';
       var remote = pulled.status === 'ok' ? pulled.data : null;
       var remoteN = this.countRecords(remote);
 
@@ -2469,6 +2474,24 @@
       this._initialSyncDone = true;
       this._lastSyncReason = result.reason;
       return result;
+    },
+
+    /**
+     * Отправить данные с устройства в облако по прямой команде человека.
+     *
+     * Нужна, когда чтение с Диска почему-то не проходит: автоматика в такой
+     * ситуации намеренно ничего не делает, чтобы не навредить, и без этой
+     * кнопки починить облако было бы нечем.
+     */
+    async pushNow() {
+      if (!this.canSync()) return { ok: false, reason: 'no-token' };
+      var n = this.localCount();
+      if (n === 0) return { ok: false, reason: 'nothing-to-send' };
+      // Ручная отправка разблокирует и последующую автоматическую
+      this._initialSyncDone = true;
+      var ok = await this.push();
+      if (ok) this._lastSyncReason = 'manual-push';
+      return { ok: ok, reason: ok ? 'pushed' : 'push-failed', count: n };
     },
 
     /** Отложенный push после изменений (не чаще раза в 2 сек) */
@@ -4663,6 +4686,36 @@
             if (el) el.textContent = Cloud.canSync()
               ? ('☁ Активна · ' + new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }))
               : 'Только локально';
+          })();
+          break;
+        }
+        case 'cloud-push-now': {
+          (async function () {
+            if (!Cloud.canSync()) {
+              UI.showToast('Синхронизация доступна только после входа через Яндекс ID');
+              return;
+            }
+            var n = Cloud.localCount();
+            if (n === 0) {
+              UI.showToast('На этом устройстве нет данных — отправлять нечего');
+              return;
+            }
+            if (!confirm('Отправить данные с этого устройства в облако?\n\n' +
+                'Здесь сейчас ' + n + ' записей (клиентов ' + State.clients.length +
+                ', занятий ' + State.classes.length + ').\n' +
+                'То, что лежит в облаке, будет заменено.')) return;
+            UI.showToast('Отправляю…');
+            var res = await Cloud.pushNow();
+            if (res.ok) {
+              UI.showToast('Отправлено в облако: ' + res.count + ' записей');
+              var st = document.getElementById('syncStatus');
+              if (st) st.textContent = '☁ Активна · ' +
+                new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+            } else if (res.reason === 'nothing-to-send') {
+              UI.showToast('Отправлять нечего');
+            } else {
+              UI.showToast('Не удалось отправить — проверьте связь');
+            }
           })();
           break;
         }
