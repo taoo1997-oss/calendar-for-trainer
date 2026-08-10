@@ -1378,7 +1378,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-10 · 12',
+    BUILD: '2026-08-10 · 13',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -2127,6 +2127,7 @@
     _initialSyncDone: false,
     _lastSyncReason: '',
     _lastPullError: '',
+    _lastPullVia: '',
 
     /** Сколько всего записей в наборе данных (0 = пусто) */
     countRecords(d) {
@@ -2190,6 +2191,7 @@
       lines.push('Первая синхронизация: ' + (Cloud._initialSyncDone ? 'выполнена' : 'ещё нет'));
       if (Cloud._lastSyncReason) lines.push('Итог синхронизации: ' + Cloud._lastSyncReason);
       if (Cloud._lastPullError) lines.push('Чтение с Диска не прошло: ' + Cloud._lastPullError);
+      if (Cloud._lastPullVia) lines.push('Файл прочитан способом: ' + Cloud._lastPullVia);
       lines.push('—');
 
       var user = State.currentUser;
@@ -2227,6 +2229,18 @@
             lines.push('Файл данных в облаке: есть, изменён ' +
               new Date(meta.modified).toLocaleString('ru-RU'));
             lines.push('Размер: ' + (meta.size || 0) + ' байт');
+            // Реальная попытка прочитать файл — самое важное место
+            var test = await this.pullEx();
+            if (test.status === 'ok') {
+              lines.push('Чтение файла: УСПЕШНО' +
+                (this._lastPullVia ? ' (способ: ' + this._lastPullVia + ')' : '') +
+                ', записей ' + this.countRecords(test.data));
+            } else if (test.status === 'missing') {
+              lines.push('Чтение файла: файла нет');
+            } else {
+              lines.push('Чтение файла: НЕ УДАЛОСЬ');
+              lines.push('  ' + (test.reason || 'причина неизвестна'));
+            }
           } else {
             lines.push('Файл данных в облаке: ошибка ' + file.status);
           }
@@ -2268,6 +2282,91 @@
      *   missing — файла действительно нет (404)
      *   error   — спросить не получилось; трогать облако НЕЛЬЗЯ
      */
+    /**
+     * Скачать сам файл по ссылке, выданной Диском.
+     *
+     * ЗДЕСЬ И БЫЛА ПОЛОМКА. Диск отдаёт ссылку на отдельный сервер
+     * (downloader.disk.yandex.ru), и обычный fetch до него из браузера может
+     * не дойти: то ссылка приходит по http на https-странице, то сервер не
+     * присылает заголовки, которые браузер требует для чужого домена.
+     * Метаданные при этом читаются прекрасно — поэтому «Доступ к Диску: ОК»
+     * соседствовал с «Чтение не прошло».
+     *
+     * Пробуем по очереди три пути и запоминаем, что именно не сработало.
+     */
+    async _downloadJson(href) {
+      var errors = [];
+      var url = String(href || '');
+      // http на https-странице браузер просто блокирует
+      if (url.indexOf('http://') === 0) url = 'https://' + url.slice(7);
+
+      // Способ 1 — обычный запрос
+      try {
+        var r = await fetch(url);
+        if (r.ok) {
+          var d1 = await r.json();
+          if (d1 && typeof d1 === 'object') return { ok: true, data: d1, via: 'fetch' };
+          errors.push('fetch:не-json');
+        } else {
+          errors.push('fetch:' + r.status);
+        }
+      } catch (e) {
+        errors.push('fetch:' + ((e && e.message) || 'сбой'));
+      }
+
+      // Способ 2 — через нативную обёртку (только в APK).
+      // Скачивает сам Android, ограничения браузера на него не действуют.
+      if (window.AndroidBridge && typeof window.AndroidBridge.fetchText === 'function') {
+        try {
+          var txt = window.AndroidBridge.fetchText(url);
+          if (txt && txt.charAt(0) === '{') {
+            var d2 = JSON.parse(txt);
+            if (d2 && typeof d2 === 'object') return { ok: true, data: d2, via: 'android' };
+          }
+          errors.push('android:' + String(txt || 'пусто').slice(0, 40));
+        } catch (e) {
+          errors.push('android:' + ((e && e.message) || 'сбой'));
+        }
+      }
+
+      // Способ 3 — XMLHttpRequest
+      try {
+        var t = await new Promise(function (resolve, reject) {
+          var x = new XMLHttpRequest();
+          x.open('GET', url, true);
+          x.timeout = 20000;
+          x.onload = function () {
+            if (x.status >= 200 && x.status < 300) resolve(x.responseText);
+            else reject(new Error(String(x.status)));
+          };
+          x.onerror = function () { reject(new Error('сеть')); };
+          x.ontimeout = function () { reject(new Error('таймаут')); };
+          x.send();
+        });
+        var d3 = JSON.parse(t);
+        if (d3 && typeof d3 === 'object') return { ok: true, data: d3, via: 'xhr' };
+        errors.push('xhr:не-json');
+      } catch (e) {
+        errors.push('xhr:' + ((e && e.message) || 'сбой'));
+      }
+
+      return { ok: false, errors: errors };
+    },
+
+    /** Взять ссылку на файл вторым способом — из карточки ресурса */
+    async _hrefFromResource() {
+      try {
+        var res = await this._api('GET',
+          'https://cloud-api.yandex.net/v1/disk/resources?path=' +
+          encodeURIComponent(this.PATH) + '&fields=file');
+        if (!res.ok) return null;
+        var meta = await res.json();
+        return meta && meta.file ? meta.file : null;
+      } catch (e) {
+        return null;
+      }
+    },
+
     async pullEx() {
       if (!this.canSync()) return { status: 'error', reason: 'no-token' };
       try {
@@ -2289,14 +2388,26 @@
         }
 
         var info = await meta.json();
-        if (!info.href) return { status: 'error', reason: 'no-href' };
+        var href = info && info.href;
 
-        var fileRes = await fetch(info.href);
-        if (!fileRes.ok) return { status: 'error', reason: 'download-' + fileRes.status };
+        var got = href ? await this._downloadJson(href) : { ok: false, errors: ['нет ссылки'] };
 
-        var data = await fileRes.json();
-        if (!data || typeof data !== 'object') return { status: 'error', reason: 'bad-json' };
-        return { status: 'ok', data: data };
+        // Не вышло — просим ссылку другим методом и пробуем ещё раз
+        if (!got.ok) {
+          var alt = await this._hrefFromResource();
+          if (alt && alt !== href) {
+            var got2 = await this._downloadJson(alt);
+            if (got2.ok) got = got2;
+            else got.errors = got.errors.concat(got2.errors || []);
+          }
+        }
+
+        if (!got.ok) {
+          return { status: 'error', reason: 'download [' + got.errors.join(' | ') + ']' };
+        }
+
+        this._lastPullVia = got.via || '';
+        return { status: 'ok', data: got.data };
       } catch (e) {
         console.error('[Cloud.pullEx]', e);
         return { status: 'error', reason: 'network' };
