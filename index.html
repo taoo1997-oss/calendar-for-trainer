@@ -1377,7 +1377,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-08 · 9',
+    BUILD: '2026-08-09 · 10',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -2171,6 +2171,14 @@
           : 'через браузер'));
       lines.push('Отступы из Android: ' +
         (document.documentElement.getAttribute('data-native-insets') ? 'да' : 'нет'));
+      // Откуда приложение взяло страницу: с сайта или из вшитой копии
+      if (window.AndroidBridge && typeof window.AndroidBridge.sourceMode === 'function') {
+        var mode = '';
+        try { mode = window.AndroidBridge.sourceMode(); } catch (e) { mode = ''; }
+        lines.push('Источник страницы: ' +
+          (mode === 'remote' ? 'сайт GitHub Pages (обновляется сам)'
+                             : 'встроенная копия в APK (нет связи с сайтом)'));
+      }
       lines.push('Аккаунтов на устройстве: ' + Auth.accountsCount());
       lines.push('Записей на устройстве: ' + Cloud.localCount() +
         ' (клиентов ' + State.clients.length +
