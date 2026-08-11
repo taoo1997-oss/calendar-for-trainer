@@ -643,6 +643,61 @@
     .paid-badge.yes { background: #d1fae5; color: #059669; }
     .paid-badge.no { background: #ffe4e6; color: #e11d48; }
 
+    .price-box {
+      margin-top: 12px; padding: 12px; border-radius: 12px;
+      background: var(--primary-light); border: 1px solid transparent;
+    }
+    .price-box label {
+      display: block; font-size: 0.78rem; font-weight: 600;
+      color: var(--text); margin-bottom: 6px;
+    }
+    .price-box input { width: 100%; }
+
+    .money-card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+      padding: 14px; box-shadow: var(--shadow); margin-bottom: 10px;
+    }
+    .money-total {
+      font-size: 1.6rem; font-weight: 700; color: var(--primary); line-height: 1.1;
+    }
+    .money-total-label { font-size: 0.72rem; color: var(--text-muted); margin-bottom: 10px; }
+    .money-rows { display: flex; flex-direction: column; gap: 6px; }
+    .money-row {
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 0.82rem; padding: 6px 0; border-top: 1px solid var(--border);
+    }
+    .money-row span:last-child { font-weight: 600; }
+    .money-row.muted span { color: var(--text-muted); font-weight: 500; }
+
+    .income-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+      padding: 10px 12px; margin-bottom: 6px; cursor: pointer;
+    }
+    .income-row-note { font-size: 0.85rem; font-weight: 500; }
+    .income-row-date { font-size: 0.7rem; color: var(--text-muted); }
+    .income-row-sum { font-weight: 700; color: var(--primary); white-space: nowrap; }
+
+    .day-total {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-top: 10px; padding: 12px 14px; border-radius: 14px;
+      background: var(--primary-light); border: 1px solid transparent;
+    }
+    .day-total-label { font-size: 0.8rem; font-weight: 600; color: var(--text); }
+    .day-total-sum { font-size: 1.15rem; font-weight: 700; color: var(--primary); }
+    .day-total-detail { font-size: 0.68rem; color: var(--text-muted); margin-top: 2px; }
+
+    .collapse-toggle {
+      width: 100%; display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; padding: 12px 14px; border: 1px solid var(--border);
+      border-radius: 12px; background: var(--card); color: var(--text);
+      font-family: inherit; font-size: 0.9rem; font-weight: 500; cursor: pointer;
+      text-align: left;
+    }
+    .collapse-toggle:active { background: var(--bg); }
+    .collapse-caret { color: var(--text-muted); transition: transform 0.15s; flex: 0 0 auto; }
+    .collapse-caret.open { transform: rotate(180deg); }
+
     .client-select-list {
       max-height: 220px; overflow-y: auto; border: 1px solid var(--border);
       border-radius: 12px; padding: 4px;
@@ -886,6 +941,11 @@
       padding: 8px 12px; margin-top: 4px; position: relative;
     }
     .time-picker-col {
+      /* Отступ ровно в один элемент сверху и снизу: первый и последний
+         пункт могут встать по центру, а прокрутить в пустоту уже нельзя.
+         Раньше здесь были фальшивые пустые пункты, и после «45» колесо
+         уезжало в никуда. */
+      padding: 44px 0;
       height: 132px; width: 72px; overflow-y: auto; scroll-snap-type: y mandatory;
       -webkit-overflow-scrolling: touch; border-radius: 10px;
       mask-image: linear-gradient(to bottom, transparent, #000 28%, #000 72%, transparent);
@@ -949,6 +1009,26 @@
 <body>
   
   <!-- Выбор контактов телефона (свой список, без зависимости от окна системы) -->
+  <div class="modal-overlay" id="incomeModal">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">Дополнительный доход</div>
+        <button type="button" class="modal-close" data-close="incomeModal">×</button>
+      </div>
+      <form id="incomeForm">
+        <input type="hidden" id="incomeId">
+        <div class="form-group"><label>Дата *</label><input type="date" id="incomeDate" required></div>
+        <div class="form-group"><label>Сумма, ₽ *</label><input type="number" id="incomeAmount" min="0" step="100" inputmode="numeric" required placeholder="1500"></div>
+        <div class="form-group"><label>За что</label><input type="text" id="incomeNote" placeholder="Например: субаренда зала"></div>
+        <div class="flex gap-2 mt-3">
+          <button type="button" class="btn btn-secondary btn-block" data-close="incomeModal">Отмена</button>
+          <button type="submit" class="btn btn-primary btn-block">Сохранить</button>
+        </div>
+        <button type="button" class="btn btn-danger btn-block mt-2 hidden" id="btnDeleteIncome" data-action="income-delete">Удалить</button>
+      </form>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="contactsPickModal">
     <div class="modal">
       <div class="modal-handle"></div>
@@ -1050,6 +1130,16 @@
     </div>
 
     <div id="section-clients" class="section" data-screen="clients">
+      <div class="club-month-bar">
+        <button type="button" class="club-month-arrow" data-action="money-month-prev" aria-label="Предыдущий месяц">◀</button>
+        <select id="moneyMonthSelect" class="club-month-select"></select>
+        <button type="button" class="club-month-arrow" data-action="money-month-next" aria-label="Следующий месяц">▶</button>
+      </div>
+      <div class="money-card" id="moneyCard"></div>
+      <button type="button" class="btn btn-secondary btn-block btn-sm" data-action="income-add" style="margin-bottom:12px;">
+        ➕ Добавить доход
+      </button>
+      <div id="incomeList"></div>
       <div class="stats">
         <div class="stat-card"><div class="stat-value" id="statClients">0</div><div class="stat-label">Клиентов</div></div>
         <div class="stat-card"><div class="stat-value" id="statWeek">0</div><div class="stat-label">За неделю</div></div>
@@ -1180,6 +1270,11 @@
             <input type="date" id="abonementStart">
             <p class="text-sm text-muted" style="margin-top:6px;font-size:0.7rem;">Занятия <strong>до</strong> этой даты абонементом не оплачиваются.</p>
           </div>
+          <div class="form-group" style="margin:12px 0 0;">
+            <label>Стоимость абонемента, ₽</label>
+            <input type="number" id="abonementPrice" min="0" step="100" inputmode="numeric" placeholder="6000">
+            <p class="text-sm text-muted" style="margin-top:6px;font-size:0.7rem;">Запишется в доход датой выдачи. Заполните до нажатия «+».</p>
+          </div>
           <div class="chip-row" id="abonementChips" style="margin-top:12px;">
             <button type="button" class="chip" data-action="abon-add" data-sessions="4">+ 4</button>
             <button type="button" class="chip" data-action="abon-add" data-sessions="6">+ 6</button>
@@ -1238,7 +1333,14 @@
           </select>
           <p class="text-sm text-muted" style="margin-top:6px;font-size:0.72rem;">Группа из раздела «Клуб» — в расписании синим, без оплаты за занятие</p>
         </div>
-        <div class="form-group"><label>Клиенты (разовые)</label><div class="client-select-list" id="classClientSelect"></div></div>
+        <div class="form-group">
+          <label>Клиенты (разовые)</label>
+          <button type="button" class="collapse-toggle" data-action="toggle-client-select">
+            <span id="clientSelectSummary">Никто не выбран</span>
+            <span class="collapse-caret" id="clientSelectCaret">▾</span>
+          </button>
+          <div class="client-select-list hidden" id="classClientSelect"></div>
+        </div>
         <div class="form-group"><label>Комментарий</label><textarea id="classNotes" rows="2" placeholder="Зал, тема…"></textarea></div>
         <div class="form-group" style="margin-bottom:12px;">
           <label class="checkbox-item" style="margin:0;cursor:pointer;">
@@ -1246,6 +1348,14 @@
             <span style="font-weight:500;font-size:0.875rem;">Групповое занятие (списывать абонемент)</span>
           </label>
           <p class="text-sm text-muted" style="margin-top:6px;font-size:0.72rem;padding-left:32px;">Если включено — у участников с абонементом автоматически списывается 1 занятие и ставится «Оплатил».</p>
+          <div class="price-box" id="classPriceBox">
+            <label>Стоимость с человека, ₽</label>
+            <input type="number" id="classPrice" min="0" step="50" inputmode="numeric" placeholder="800">
+            <p class="text-sm text-muted" style="margin-top:6px;font-size:0.7rem;">
+              Считаются только те, кто отмечен «Оплатил» и платит разово.
+              У кого списался абонемент — не в счёт, их оплата уже учтена при продаже абонемента.
+            </p>
+          </div>
         </div>
         <div class="flex gap-2 mt-3">
           <button type="button" class="btn btn-secondary btn-block" data-close="classModal">Отмена</button>
@@ -1378,7 +1488,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-10 · 13',
+    BUILD: '2026-08-11 · 14',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -1389,7 +1499,7 @@
     DEFAULT_SETTINGS: {
       calendarName: '', dark: false, primary: '#e11d48',
       calStyle: 'standard', profileName: '', profilePhone: '',
-      yandexClientId: '', clubMonth: ''
+      yandexClientId: '', clubMonth: '', defaultPrice: 0
     },
     /* ClientID можно задать здесь или в Настройках */
     YANDEX_CLIENT_ID: 'ca84af634c284a99b2a6ab6ce1d9b378'
@@ -1450,6 +1560,8 @@
     currentDetailClassId: null,
     currentDetailGroupId: null,
     clubMonth: null, // выбранный месяц в разделе «Клуб» (YYYY-MM)
+    moneyMonth: null, // выбранный месяц в разделе «Клиенты»
+    incomes: [], // разовые поступления: продажа абонементов и прочее
     dataKey() {
       return this.currentUser ? CONFIG.STORAGE_KEY + '_' + this.currentUser.id : CONFIG.STORAGE_KEY;
     },
@@ -1466,6 +1578,7 @@
         classes: this.classes,
         clubMembers: this.clubMembers,
         clubGroups: this.clubGroups,
+        incomes: this.incomes,
         settings: this.settings
       });
       try { if (typeof Cloud !== 'undefined') Cloud.schedulePush(); } catch (e) {}
@@ -1483,7 +1596,9 @@
       this.classes = data.classes || [];
       this.clubMembers = data.clubMembers || [];
       this.clubGroups = data.clubGroups || [];
+      this.incomes = Array.isArray(data.incomes) ? data.incomes : [];
       this.settings = Object.assign({}, CONFIG.DEFAULT_SETTINGS, data.settings || {});
+      this.moneyMonth = Domain.currentMonthKey();
       // Запомненный месяц архива. Не старше 24 месяцев назад — иначе текущий.
       var saved = this.settings.clubMonth;
       var cur = Domain.currentMonthKey();
@@ -2135,7 +2250,8 @@
       return ((d.clients && d.clients.length) || 0) +
              ((d.classes && d.classes.length) || 0) +
              ((d.clubMembers && d.clubMembers.length) || 0) +
-             ((d.clubGroups && d.clubGroups.length) || 0);
+             ((d.clubGroups && d.clubGroups.length) || 0) +
+             ((d.incomes && d.incomes.length) || 0);
     },
     localSnapshot() {
       return {
@@ -2143,6 +2259,7 @@
         classes: State.classes,
         clubMembers: State.clubMembers,
         clubGroups: State.clubGroups,
+        incomes: State.incomes,
         settings: State.settings
       };
     },
@@ -2462,6 +2579,7 @@
           classes: State.classes,
           clubMembers: State.clubMembers,
           clubGroups: State.clubGroups,
+          incomes: State.incomes,
           settings: State.settings,
           updatedAt: new Date().toISOString(),
           userId: State.currentUser && State.currentUser.id
@@ -2507,6 +2625,7 @@
       if (Array.isArray(remote.classes)) State.classes = remote.classes;
       if (Array.isArray(remote.clubMembers)) State.clubMembers = remote.clubMembers;
       if (Array.isArray(remote.clubGroups)) State.clubGroups = remote.clubGroups;
+      if (Array.isArray(remote.incomes)) State.incomes = remote.incomes;
       if (remote.settings && typeof remote.settings === 'object') {
         State.settings = Object.assign({}, CONFIG.DEFAULT_SETTINGS, remote.settings);
       }
@@ -2650,7 +2769,7 @@
       State.persist();
     },
     /** Добавить/пополнить абонемент: 4, 6 или 8 занятий */
-    addAbonement(clientId, sessions) {
+    addAbonement(clientId, sessions, price) {
       var c = State.clients.find(function (x) { return x.id === clientId; });
       if (!c) return null;
       sessions = parseInt(sessions, 10);
@@ -2671,9 +2790,21 @@
         remaining: prevRem + sessions,
         packSize: sessions,
         startDate: startDate,
+        price: Math.max(0, parseInt(price, 10) || 0),
         issuedAt: new Date().toISOString(),
         debits: debits
       };
+      // Продажа абонемента — это доход датой выдачи
+      var sum = Math.max(0, parseInt(price, 10) || 0);
+      if (sum > 0) {
+        Services.addIncome({
+          date: today,
+          amount: sum,
+          note: 'Абонемент ' + sessions + ' зан. — ' + c.name,
+          type: 'abonement',
+          clientId: c.id
+        });
+      }
       // Сразу применить к уже существующим занятиям «Группа», где этот клиент в списке
       Services.syncClientAbonementAcrossClasses(clientId);
       State.persist();
@@ -2830,6 +2961,7 @@
         clientIds: data.clientIds || [], payments: payments,
         isGroup: !!isGroup,
         clubGroupId: data.clubGroupId || null,
+        price: Services.normalizePrice(data.price),
         createdAt: new Date().toISOString()
       };
       State.classes.push(cls);
@@ -2850,6 +2982,7 @@
       cls.time = data.time;
       cls.duration = data.duration || 60;
       cls.notes = (data.notes || '').trim();
+      cls.price = Services.normalizePrice(data.price);
       cls.clientIds = data.clientIds || [];
       cls.payments = payments;
       cls.clubGroupId = data.clubGroupId || null;
@@ -3074,6 +3207,155 @@
       g.payments[memberId] = !!paid;
       State.persist();
     },
+    /* =====================================================
+     * ДЕНЬГИ
+     * -----------------------------------------------------
+     * Доход складывается из трёх источников:
+     *   1) занятия — с тех, кто отмечен «Оплатил» и платит разово;
+     *   2) продажа абонементов — записывается датой выдачи;
+     *   3) прочее — субаренда зала и всё остальное, вручную.
+     *
+     * Ключевое правило: у кого за занятие списался абонемент, тот в доход
+     * по занятию НЕ идёт. Его деньги уже посчитаны при продаже абонемента,
+     * иначе одна и та же оплата удвоится.
+     * ===================================================== */
+
+    /** Оплатил ли клиент это занятие абонементом */
+    paidByAbonement(client, cls) {
+      return !!(client && client.abonement && client.abonement.debits &&
+        client.abonement.debits[cls.id]);
+    },
+    /**
+     * Привести цену к хранимому виду.
+     * Пустое поле — это «не задано» (null), а не ноль: иначе занятие без
+     * указанной цены перебивало бы цену по умолчанию и считалось бесплатным.
+     */
+    normalizePrice(v) {
+      if (v === undefined || v === null || v === '') return null;
+      var n = parseInt(v, 10);
+      if (isNaN(n) || n <= 0) return null;
+      return n;
+    },
+    /** Стоимость с человека для занятия */
+    classPrice(cls) {
+      if (!cls) return 0;
+      var own = Services.normalizePrice(cls.price);
+      if (own !== null) return own;
+      return Math.max(0, parseInt((State.settings && State.settings.defaultPrice) || 0, 10) || 0);
+    },
+    /** Доход с одного занятия */
+    classIncome(cls) {
+      if (!cls) return 0;
+      // Занятия клубных групп оплачиваются взносом, а не поштучно
+      if (cls.clubGroupId) return 0;
+      var price = Services.classPrice(cls);
+      if (!price) return 0;
+      var sum = 0;
+      (cls.clientIds || []).forEach(function (cid) {
+        if (!(cls.payments && cls.payments[cid])) return;
+        var c = State.clients.find(function (x) { return x.id === cid; });
+        if (Services.paidByAbonement(c, cls)) return;
+        sum += price;
+      });
+      return sum;
+    },
+    /** Сколько человек реально заплатили за занятие деньгами */
+    classPayingCount(cls) {
+      if (!cls || cls.clubGroupId) return 0;
+      var n = 0;
+      (cls.clientIds || []).forEach(function (cid) {
+        if (!(cls.payments && cls.payments[cid])) return;
+        var c = State.clients.find(function (x) { return x.id === cid; });
+        if (Services.paidByAbonement(c, cls)) return;
+        n++;
+      });
+      return n;
+    },
+    /** Итог одного дня с разбивкой */
+    dayMoney(dateStr) {
+      var fromClasses = 0, paidPeople = 0;
+      State.classes.forEach(function (cls) {
+        if (cls.date !== dateStr) return;
+        fromClasses += Services.classIncome(cls);
+        paidPeople += Services.classPayingCount(cls);
+      });
+      var fromAbon = 0, fromExtra = 0;
+      (State.incomes || []).forEach(function (inc) {
+        if (inc.date !== dateStr) return;
+        var amt = Math.max(0, parseInt(inc.amount, 10) || 0);
+        if (inc.type === 'abonement') fromAbon += amt;
+        else fromExtra += amt;
+      });
+      return {
+        classes: fromClasses, abonements: fromAbon, extra: fromExtra,
+        people: paidPeople, total: fromClasses + fromAbon + fromExtra
+      };
+    },
+    /** Итог месяца с разбивкой */
+    monthMoney(key) {
+      var mk = key || Domain.currentMonthKey();
+      var fromClasses = 0, lessons = 0, paidPeople = 0;
+      State.classes.forEach(function (cls) {
+        if (!cls.date || cls.date.slice(0, 7) !== mk) return;
+        var inc = Services.classIncome(cls);
+        if (!cls.clubGroupId) lessons++;
+        fromClasses += inc;
+        paidPeople += Services.classPayingCount(cls);
+      });
+      var fromAbon = 0, fromExtra = 0, abonCount = 0;
+      (State.incomes || []).forEach(function (inc) {
+        if (!inc.date || inc.date.slice(0, 7) !== mk) return;
+        var amt = Math.max(0, parseInt(inc.amount, 10) || 0);
+        if (inc.type === 'abonement') { fromAbon += amt; abonCount++; }
+        else fromExtra += amt;
+      });
+      // Взносы клуба за этот месяц — из помесячного архива
+      var fromClub = 0;
+      State.clubGroups.forEach(function (g) {
+        var st = Services.clubGroupStatsForMonth(g, mk);
+        fromClub += st.collected;
+      });
+      return {
+        classes: fromClasses, abonements: fromAbon, extra: fromExtra, club: fromClub,
+        lessons: lessons, people: paidPeople, abonCount: abonCount,
+        total: fromClasses + fromAbon + fromExtra + fromClub
+      };
+    },
+    /** Разовые поступления за месяц (для списка) */
+    incomesForMonth(key) {
+      var mk = key || Domain.currentMonthKey();
+      return (State.incomes || []).filter(function (inc) {
+        return inc.date && inc.date.slice(0, 7) === mk;
+      }).sort(function (a, b) { return String(b.date).localeCompare(String(a.date)); });
+    },
+    addIncome(data) {
+      var inc = {
+        id: Domain.uid(),
+        date: data.date || Domain.formatDate(new Date()),
+        amount: Math.max(0, parseInt(data.amount, 10) || 0),
+        note: (data.note || '').trim(),
+        type: data.type || 'extra',
+        clientId: data.clientId || null,
+        createdAt: new Date().toISOString()
+      };
+      State.incomes.push(inc);
+      State.persist();
+      return inc;
+    },
+    updateIncome(id, data) {
+      var inc = State.incomes.find(function (x) { return x.id === id; });
+      if (!inc) return null;
+      inc.date = data.date || inc.date;
+      inc.amount = Math.max(0, parseInt(data.amount, 10) || 0);
+      inc.note = (data.note || '').trim();
+      State.persist();
+      return inc;
+    },
+    deleteIncome(id) {
+      State.incomes = State.incomes.filter(function (x) { return x.id !== id; });
+      State.persist();
+    },
+
     /** Сумма к оплате участника в группе с учётом скидки */
     clubMemberDue(group, member) {
       var fee = (group && group.fee) || 0;
@@ -3286,8 +3568,16 @@
         var name = (c.name || '').trim();
         var phone = (c.phone || '').trim();
         if (q) {
-          var hay = (name + ' ' + phone.replace(/\D/g, '')).toLowerCase();
-          if (hay.indexOf(q) === -1 && phone.replace(/\D/g, '').indexOf(q.replace(/\D/g, '')) === -1) return;
+          /* Здесь была ошибка: у запроса из букв цифр нет, а поиск пустой
+             строки в номере всегда успешен — поэтому фильтр пропускал
+             вообще всех, и список оставался в 597 контактов. Проверку по
+             цифрам делаем только когда цифры в запросе действительно есть. */
+          var digits = q.replace(/\D/g, '');
+          var hay = (name + ' ' + phone).toLowerCase();
+          var byText = hay.indexOf(q) !== -1;
+          var byPhone = digits.length > 0 &&
+            phone.replace(/\D/g, '').indexOf(digits) !== -1;
+          if (!byText && !byPhone) return;
         }
         shown++;
         var exists = Services.clientExists(name, phone);
@@ -3340,20 +3630,11 @@
       if (!hoursEl || !minsEl || hoursEl.dataset.ready) return;
       hoursEl.dataset.ready = '1';
       var hHtml = '', mHtml = '';
-      // padding items for snap center
-      for (var p = 0; p < 2; p++) {
-        hHtml += '<div class="time-picker-item" data-pad="1">&nbsp;</div>';
-        mHtml += '<div class="time-picker-item" data-pad="1">&nbsp;</div>';
-      }
       for (var h = 0; h < 24; h++) {
         hHtml += '<div class="time-picker-item" data-h="' + h + '">' + String(h).padStart(2, '0') + '</div>';
       }
       for (var m = 0; m < 60; m += 15) {
         mHtml += '<div class="time-picker-item" data-m="' + m + '">' + String(m).padStart(2, '0') + '</div>';
-      }
-      for (var p2 = 0; p2 < 2; p2++) {
-        hHtml += '<div class="time-picker-item" data-pad="1">&nbsp;</div>';
-        mHtml += '<div class="time-picker-item" data-pad="1">&nbsp;</div>';
       }
       hoursEl.innerHTML = hHtml;
       minsEl.innerHTML = mHtml;
@@ -3535,17 +3816,25 @@
       var dayClasses = State.classes.filter(function (c) { return c.date === State.selectedDate; }).sort(function (a, b) { return a.time.localeCompare(b.time); });
       var container = this.$('dayClasses');
       var hourH = CONFIG.HOUR_HEIGHT || 96;
-      var startH = CONFIG.DAY_START_HOUR;
-      var endH = CONFIG.DAY_END_HOUR;
-      // Расширяем сетку под реальные занятия (в т.ч. вне 08–22)
+
+      /* Сетка строится по реальному дню, а не по фиксированным 08–22:
+         начинаем с часа первого занятия и заканчиваем часом последнего.
+         Пустые часы ВНУТРИ диапазона остаются на месте — это перерывы,
+         их видеть нужно. А вот пустое утро больше не занимает экран. */
+      var startH = null, endH = null;
       dayClasses.forEach(function (cls) {
-        var s = Domain.timeToMinutes(cls.time);
-        var e = s + (cls.duration || 60);
-        var sh = Math.floor(s / 60);
-        var eh = Math.ceil(e / 60);
-        if (sh < startH) startH = Math.max(0, sh);
-        if (eh > endH) endH = Math.min(24, eh);
+        var st = Domain.timeToMinutes(cls.time);
+        var en = st + (cls.duration || 60);
+        var sh = Math.floor(st / 60);
+        var eh = Math.ceil(en / 60);
+        if (startH === null || sh < startH) startH = Math.max(0, sh);
+        if (endH === null || eh > endH) endH = Math.min(24, eh);
       });
+      if (startH === null) { startH = CONFIG.DAY_START_HOUR; endH = CONFIG.DAY_START_HOUR + 2; }
+      // последний час показываем целиком, если занятие кончается ровно в :00
+      if (endH <= startH) endH = startH + 1;
+      endH = endH - 1;
+      if (endH < startH) endH = startH;
       // если занятие доходит до 24:00 — последний слот 23
       if (endH > 23) endH = 23;
       var dayStartMin = startH * 60;
@@ -3571,10 +3860,28 @@
       grid += '</div></div>';
 
       if (!dayClasses.length) {
-        container.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-muted);font-size:0.85rem;">Нет занятий — нажмите «+»</div>' + grid;
+        // Пустой день — сетку не рисуем вообще, незачем листать пустоту
+        container.innerHTML = '<div class="empty" style="padding:28px 12px;">' +
+          '<div class="empty-icon">🗓</div><div>Нет занятий — нажмите «+»</div></div>';
       } else {
-        container.innerHTML = grid;
+        container.innerHTML = grid + UI.renderDayTotal(State.selectedDate);
       }
+    },
+    /** Плашка «итог дня» под сеткой */
+    renderDayTotal(dateStr) {
+      var m = Services.dayMoney(dateStr);
+      if (!m.total) return '';
+      var parts = [];
+      if (m.classes) parts.push('занятия ' + UI.formatMoney(m.classes) +
+        (m.people ? ' (' + m.people + ' чел.)' : ''));
+      if (m.abonements) parts.push('абонементы ' + UI.formatMoney(m.abonements));
+      if (m.extra) parts.push('прочее ' + UI.formatMoney(m.extra));
+      return '<div class="day-total">' +
+        '<div><div class="day-total-label">Итог дня</div>' +
+        (parts.length ? '<div class="day-total-detail">' + parts.join(' · ') + '</div>' : '') +
+        '</div>' +
+        '<div class="day-total-sum">' + UI.formatMoney(m.total) + '</div>' +
+      '</div>';
     },
     renderClassCard(cls, top, height) {
       var clients = (cls.clientIds || []).map(function (id) { return State.clients.find(function (c) { return c.id === id; }); }).filter(Boolean);
@@ -3624,6 +3931,7 @@
             (c.notes || '').toLowerCase().includes(search);
         });
       }
+      this.renderMoney();
       var stats = Services.getStats();
       this.$('statClients').textContent = stats.clients;
       this.$('statClasses').textContent = stats.total;
@@ -3694,6 +4002,8 @@
         (since ? '<div class="abon-meta" style="margin-top:2px;">' + since + '</div>' : '');
       if (wrap) wrap.classList.remove('hidden');
       if (startInput) startInput.value = ab.startDate || '';
+      var priceInput = this.$('abonementPrice');
+      if (priceInput) priceInput.value = '';
     },
     setDuration(mins) {
       var n = parseInt(mins, 10) || 60;
@@ -3765,6 +4075,7 @@
         return;
       }
       var sorted = State.clients.slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); });
+      box.dataset.rendered = '1';
       box.innerHTML = sorted.map(function (c) {
         var ab = '';
         if (c.abonement && c.abonement.total > 0) {
@@ -3779,6 +4090,81 @@
             (c.phone ? '<span class="client-select-phone">' + Domain.escapeHtml(c.phone) + '</span>' : '') +
           '</span></label>';
       }).join('');
+      box.onchange = function () { UI.updateClientSelectSummary(); };
+      this.updateClientSelectSummary();
+    },
+    /** Подпись на свёрнутом списке: кого выбрали */
+    updateClientSelectSummary() {
+      var el = this.$('clientSelectSummary');
+      if (!el) return;
+      var checked = Array.from(document.querySelectorAll('#classClientSelect input:checked'));
+      if (!checked.length) { el.textContent = 'Никто не выбран'; return; }
+      var names = checked.map(function (cb) {
+        var c = State.clients.find(function (x) { return x.id === cb.value; });
+        return c ? c.name : '';
+      }).filter(Boolean);
+      var head = names.slice(0, 2).join(', ');
+      el.textContent = names.length > 2
+        ? head + ' и ещё ' + (names.length - 2)
+        : head;
+    },
+    /** Выбранный месяц в разделе «Клиенты» */
+    moneyMonth() {
+      if (!State.moneyMonth) State.moneyMonth = Domain.currentMonthKey();
+      return State.moneyMonth;
+    },
+    renderMoney() {
+      var key = this.moneyMonth();
+      var sel = this.$('moneyMonthSelect');
+      if (sel) {
+        var cur = Domain.currentMonthKey();
+        var opts = Services.clubMonthOptions();
+        if (opts.indexOf(key) === -1) opts.push(key);
+        opts.sort().reverse();
+        sel.innerHTML = opts.map(function (k) {
+          return '<option value="' + k + '"' + (k === key ? ' selected' : '') + '>' +
+            Domain.monthLabel(k) + (k === cur ? ' · сейчас' : '') + '</option>';
+        }).join('');
+        sel.value = key;
+      }
+
+      var m = Services.monthMoney(key);
+      var card = this.$('moneyCard');
+      if (card) {
+        var rows = '';
+        rows += '<div class="money-row"><span>Занятия' +
+          (m.people ? ' · ' + m.people + ' оплат' : '') + '</span><span>' +
+          UI.formatMoney(m.classes) + '</span></div>';
+        rows += '<div class="money-row"><span>Абонементы' +
+          (m.abonCount ? ' · ' + m.abonCount + ' шт.' : '') + '</span><span>' +
+          UI.formatMoney(m.abonements) + '</span></div>';
+        rows += '<div class="money-row"><span>Взносы клуба</span><span>' +
+          UI.formatMoney(m.club) + '</span></div>';
+        rows += '<div class="money-row"><span>Прочее</span><span>' +
+          UI.formatMoney(m.extra) + '</span></div>';
+        card.innerHTML =
+          '<div class="money-total-label">Заработано за ' + Domain.monthLabel(key).toLowerCase() + '</div>' +
+          '<div class="money-total">' + UI.formatMoney(m.total) + '</div>' +
+          '<div class="money-rows" style="margin-top:10px;">' + rows + '</div>';
+      }
+
+      var listEl = this.$('incomeList');
+      if (listEl) {
+        var items = Services.incomesForMonth(key);
+        listEl.innerHTML = items.length
+          ? items.map(function (inc) {
+              var isAbon = inc.type === 'abonement';
+              return '<div class="income-row" data-action="income-open" data-id="' + inc.id + '">' +
+                '<div><div class="income-row-note">' +
+                  (isAbon ? '🎟 ' : '💰 ') +
+                  Domain.escapeHtml(inc.note || (isAbon ? 'Абонемент' : 'Доход')) +
+                '</div><div class="income-row-date">' +
+                  Domain.formatDisplayDate(inc.date) + '</div></div>' +
+                '<div class="income-row-sum">' + UI.formatMoney(inc.amount) + '</div>' +
+              '</div>';
+            }).join('')
+          : '';
+      }
     },
     renderClassDetail(cls) {
       var clients = (cls.clientIds || []).map(function (cid) {
@@ -4292,6 +4678,17 @@
     openClassModal(id) {
       var cls = id ? State.classes.find(function (c) { return c.id === id; }) : null;
       UI.fillClassForm(cls || null);
+      var priceEl = UI.$('classPrice');
+      if (priceEl) {
+        var def = (State.settings && State.settings.defaultPrice) || 0;
+        priceEl.value = cls && cls.price ? cls.price : (def || '');
+      }
+      // Список клиентов всегда открываем свёрнутым — форма и так длинная
+      var listEl = UI.$('classClientSelect');
+      var caret = UI.$('clientSelectCaret');
+      if (listEl) listEl.classList.add('hidden');
+      if (caret) caret.classList.remove('open');
+      UI.updateClientSelectSummary();
       UI.openModal('classModal');
     },
     saveClass(e) {
@@ -4308,7 +4705,8 @@
         notes: UI.$('classNotes').value,
         clientIds: Array.from(document.querySelectorAll('#classClientSelect input:checked')).map(function (cb) { return cb.value; }),
         isGroup: groupEl ? !!groupEl.checked : false,
-        clubGroupId: clubGroupId
+        clubGroupId: clubGroupId,
+        price: UI.$('classPrice') ? UI.$('classPrice').value : 0
       };
       if (clubGroupId && !data.title.trim()) {
         var cg = State.clubGroups.find(function (g) { return g.id === clubGroupId; });
@@ -4327,8 +4725,15 @@
       else { Services.createClass(data); UI.showToast('Создано'); }
       State.selectedDate = data.date;
       State.currentWeekStart = Domain.getMonday(new Date(data.date + 'T12:00:00'));
+      // Запомнить цену как «обычную» — чтобы в следующий раз подставилась
+      var priceVal = Math.max(0, parseInt(data.price, 10) || 0);
+      if (priceVal > 0 && !clubGroupId) {
+        State.settings.defaultPrice = priceVal;
+        State.persist();
+      }
       UI.closeModal('classModal');
       UI.renderSchedule();
+      UI.renderClients();
     },
     deleteClass() {
       var id = UI.$('classId').value || State.currentDetailClassId;
@@ -4425,6 +4830,46 @@
       UI.renderClub();
       var suffix = (key === Domain.currentMonthKey()) ? '' : ' · ' + Domain.monthLabel(key);
       UI.showToast((paid ? 'Взнос отмечен' : 'Отметка снята') + suffix);
+    },
+    setMoneyMonth(key) {
+      if (!key || !/^\d{4}-\d{2}$/.test(key)) return;
+      State.moneyMonth = key;
+      UI.renderClients();
+    },
+    shiftMoneyMonth(delta) {
+      var next = Domain.addMonthsToKey(UI.moneyMonth(), delta);
+      var cur = Domain.currentMonthKey();
+      if (next > Domain.addMonthsToKey(cur, 1)) { UI.showToast('Дальше вперёд некуда'); return; }
+      if (next < Domain.addMonthsToKey(cur, -24)) { UI.showToast('Учёт хранится за 2 года'); return; }
+      Controllers.setMoneyMonth(next);
+    },
+    openIncomeModal(id) {
+      var inc = id ? State.incomes.find(function (x) { return x.id === id; }) : null;
+      UI.$('incomeId').value = inc ? inc.id : '';
+      UI.$('incomeDate').value = inc ? inc.date : Domain.formatDate(new Date());
+      UI.$('incomeAmount').value = inc ? inc.amount : '';
+      UI.$('incomeNote').value = inc ? (inc.note || '') : '';
+      var del = UI.$('btnDeleteIncome');
+      if (del) del.classList.toggle('hidden', !inc);
+      UI.openModal('incomeModal');
+    },
+    saveIncome(e) {
+      e.preventDefault();
+      var id = UI.$('incomeId').value;
+      var payload = {
+        date: UI.$('incomeDate').value,
+        amount: UI.$('incomeAmount').value,
+        note: UI.$('incomeNote').value
+      };
+      if (!payload.date || !(parseInt(payload.amount, 10) > 0)) {
+        UI.showToast('Укажите дату и сумму');
+        return;
+      }
+      if (id) { Services.updateIncome(id, payload); UI.showToast('Обновлено'); }
+      else { Services.addIncome(payload); UI.showToast('Доход записан'); }
+      UI.closeModal('incomeModal');
+      UI.renderClients();
+      UI.renderSchedule();
     },
     /** Выбрать месяц архива в разделе «Клуб» (с запоминанием) */
     setClubMonth(key) {
@@ -4643,6 +5088,31 @@
         case 'club-toggle-pay':
           Controllers.toggleClubPayment(el.dataset.group, el.dataset.member, el.checked, el.dataset.month);
           break;
+        case 'toggle-client-select': {
+          var listEl = UI.$('classClientSelect');
+          var caret = UI.$('clientSelectCaret');
+          if (listEl) {
+            var willOpen = listEl.classList.contains('hidden');
+            listEl.classList.toggle('hidden', !willOpen);
+            if (caret) caret.classList.toggle('open', willOpen);
+          }
+          break;
+        }
+        case 'money-month-prev': Controllers.shiftMoneyMonth(-1); break;
+        case 'money-month-next': Controllers.shiftMoneyMonth(1); break;
+        case 'income-add': Controllers.openIncomeModal(null); break;
+        case 'income-open': Controllers.openIncomeModal(el.dataset.id); break;
+        case 'income-delete': {
+          var incId = UI.$('incomeId').value;
+          if (!incId) break;
+          if (!confirm('Удалить эту запись о доходе?')) break;
+          Services.deleteIncome(incId);
+          UI.closeModal('incomeModal');
+          UI.renderClients();
+          UI.renderSchedule();
+          UI.showToast('Удалено');
+          break;
+        }
         case 'club-month-prev': Controllers.shiftClubMonth(-1); break;
         case 'club-month-next': Controllers.shiftClubMonth(1); break;
         case 'club-month-now': Controllers.setClubMonth(Domain.currentMonthKey()); break;
@@ -4666,7 +5136,10 @@
           var cid = UI.$('clientId').value;
           if (!cid) { UI.showToast('Сначала сохраните клиента'); break; }
           var sessions = el.dataset.sessions;
-          Services.addAbonement(cid, sessions);
+          var priceEl = UI.$('abonementPrice');
+          var abonPrice = priceEl ? parseInt(priceEl.value, 10) || 0 : 0;
+          Services.addAbonement(cid, sessions, abonPrice);
+          if (priceEl) priceEl.value = '';
           var client = State.clients.find(function (x) { return x.id === cid; });
           UI.renderAbonementInfo(client);
           UI.renderClients();
@@ -4678,7 +5151,8 @@
           var rem = client && client.abonement ? client.abonement.remaining : '';
           var sd = client && client.abonement ? client.abonement.startDate : '';
           UI.showToast('Абонемент обновлён' + (rem !== '' ? ': осталось ' + rem : '') +
-            (sd ? ' · с ' + Domain.formatDisplayDate(sd) : ''));
+            (sd ? ' · с ' + Domain.formatDisplayDate(sd) : '') +
+            (abonPrice > 0 ? ' · ' + UI.formatMoney(abonPrice) : ''));
           break;
         }
         case 'abon-clear': {
@@ -4890,6 +5364,14 @@
           if (dc) UI.renderClassDetail(dc);
         }
         UI.showToast('Абонемент действует с ' + Domain.formatDisplayDate(abonStart.value));
+      });
+    }
+    var incomeForm = UI.$('incomeForm');
+    if (incomeForm) incomeForm.addEventListener('submit', Controllers.saveIncome);
+    var moneyMonthSel = UI.$('moneyMonthSelect');
+    if (moneyMonthSel) {
+      moneyMonthSel.addEventListener('change', function () {
+        Controllers.setMoneyMonth(moneyMonthSel.value);
       });
     }
     var clubMonthSel = UI.$('clubMonthSelect');
