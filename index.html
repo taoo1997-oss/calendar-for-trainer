@@ -654,28 +654,63 @@
     .price-box input { width: 100%; }
 
     .money-card {
-      background: var(--card); border: 1px solid var(--border); border-radius: 16px;
-      padding: 14px; box-shadow: var(--shadow); margin-bottom: 10px;
+      background: var(--card); border: 1px solid var(--border); border-radius: 18px;
+      box-shadow: var(--shadow); margin-bottom: 10px; overflow: hidden;
+    }
+    .money-hero {
+      padding: 16px 16px 14px;
+      background: linear-gradient(135deg,
+        color-mix(in srgb, var(--primary) 14%, transparent),
+        color-mix(in srgb, var(--primary) 4%, transparent));
     }
     .money-total {
-      font-size: 1.6rem; font-weight: 700; color: var(--primary); line-height: 1.1;
+      font-size: 2rem; font-weight: 800; color: var(--primary);
+      line-height: 1.05; letter-spacing: -0.02em;
     }
-    .money-total-label { font-size: 0.72rem; color: var(--text-muted); margin-bottom: 10px; }
-    .money-rows { display: flex; flex-direction: column; gap: 6px; }
+    .money-total-label {
+      font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;
+      text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600;
+    }
+    .money-rows { display: flex; flex-direction: column; }
     .money-row {
-      display: flex; align-items: center; justify-content: space-between;
-      font-size: 0.82rem; padding: 6px 0; border-top: 1px solid var(--border);
+      display: flex; align-items: center; gap: 10px;
+      padding: 11px 16px; border-top: 1px solid var(--border);
     }
-    .money-row span:last-child { font-weight: 600; }
-    .money-row.muted span { color: var(--text-muted); font-weight: 500; }
+    .money-row-icon {
+      flex: 0 0 auto; width: 30px; height: 30px; border-radius: 9px;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--bg); font-size: 0.9rem;
+    }
+    .money-row-text {
+      flex: 1; min-width: 0; display: flex; flex-direction: column;
+      font-size: 0.85rem; font-weight: 600; color: var(--text);
+    }
+    .money-row-sub { font-size: 0.68rem; font-weight: 500; color: var(--text-muted); }
+    .money-row-sum {
+      flex: 0 0 auto; font-size: 0.95rem; font-weight: 700; color: var(--text);
+      white-space: nowrap;
+    }
+    .money-row.is-zero .money-row-sum { color: var(--text-muted); font-weight: 600; }
+    .money-row.is-zero .money-row-icon { opacity: 0.45; }
 
+    .stats.mini .stat-card { padding: 10px 8px; }
+    .stats.mini .stat-value { font-size: 1.25rem; }
+    .stats.mini .stat-label { font-size: 0.66rem; }
+
+    .section-caption {
+      font-size: 0.68rem; font-weight: 600; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 0.06em;
+      margin: 14px 2px 8px;
+    }
+    #section-clients [data-action="income-add"] { margin-bottom: 4px; }
     .income-row {
       display: flex; align-items: center; justify-content: space-between; gap: 10px;
-      background: var(--card); border: 1px solid var(--border); border-radius: 12px;
-      padding: 10px 12px; margin-bottom: 6px; cursor: pointer;
+      background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+      padding: 11px 14px; margin-bottom: 6px; cursor: pointer;
     }
-    .income-row-note { font-size: 0.85rem; font-weight: 500; }
-    .income-row-date { font-size: 0.7rem; color: var(--text-muted); }
+    .income-row:active { background: var(--bg); }
+    .income-row-note { font-size: 0.85rem; font-weight: 600; }
+    .income-row-date { font-size: 0.68rem; color: var(--text-muted); margin-top: 2px; }
     .income-row-sum { font-weight: 700; color: var(--primary); white-space: nowrap; }
 
     .day-total {
@@ -1136,20 +1171,21 @@
         <button type="button" class="club-month-arrow" data-action="money-month-next" aria-label="Следующий месяц">▶</button>
       </div>
       <div class="money-card" id="moneyCard"></div>
-      <button type="button" class="btn btn-secondary btn-block btn-sm" data-action="income-add" style="margin-bottom:12px;">
+      <button type="button" class="btn btn-secondary btn-block btn-sm" data-action="income-add">
         ➕ Добавить доход
       </button>
       <div id="incomeList"></div>
-      <div class="stats">
-        <div class="stat-card"><div class="stat-value" id="statClients">0</div><div class="stat-label">Клиентов</div></div>
-        <div class="stat-card"><div class="stat-value" id="statWeek">0</div><div class="stat-label">За неделю</div></div>
-        <div class="stat-card"><div class="stat-value" id="statMonth">0</div><div class="stat-label">За месяц</div></div>
+
+      <div class="section-caption">Занятия</div>
+      <div class="stats mini">
+        <div class="stat-card"><div class="stat-value" id="statWeek">0</div><div class="stat-label">за неделю</div></div>
+        <div class="stat-card"><div class="stat-value" id="statMonth">0</div><div class="stat-label">за месяц</div></div>
+        <div class="stat-card"><div class="stat-value" id="statClasses">0</div><div class="stat-label">всего</div></div>
       </div>
-      <div class="stats" style="margin-top:-6px;">
-        <div class="stat-card"><div class="stat-value" id="statClasses">0</div><div class="stat-label">Всего занятий</div></div>
-      </div>
+
+      <div class="section-caption">Клиенты · <span id="statClients">0</span></div>
       <div class="search-box">
-        <input type="text" id="clientSearch" placeholder="Поиск...">
+        <input type="text" id="clientSearch" placeholder="Поиск по имени или номеру...">
       </div>
       <div id="clientsList"></div>
     </div>
@@ -1350,7 +1386,7 @@
           <p class="text-sm text-muted" style="margin-top:6px;font-size:0.72rem;padding-left:32px;">Если включено — у участников с абонементом автоматически списывается 1 занятие и ставится «Оплатил».</p>
           <div class="price-box" id="classPriceBox">
             <label>Стоимость с человека, ₽</label>
-            <input type="number" id="classPrice" min="0" step="50" inputmode="numeric" placeholder="800">
+            <input type="number" id="classPrice" min="0" step="50" inputmode="numeric" placeholder="Введите сумму">
             <p class="text-sm text-muted" style="margin-top:6px;font-size:0.7rem;">
               Считаются только те, кто отмечен «Оплатил» и платит разово.
               У кого списался абонемент — не в счёт, их оплата уже учтена при продаже абонемента.
@@ -1488,7 +1524,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-11 · 14',
+    BUILD: '2026-08-11 · 15',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -1499,7 +1535,7 @@
     DEFAULT_SETTINGS: {
       calendarName: '', dark: false, primary: '#e11d48',
       calStyle: 'standard', profileName: '', profilePhone: '',
-      yandexClientId: '', clubMonth: '', defaultPrice: 0
+      yandexClientId: '', clubMonth: ''
     },
     /* ClientID можно задать здесь или в Настройках */
     YANDEX_CLIENT_ID: 'ca84af634c284a99b2a6ab6ce1d9b378'
@@ -3236,12 +3272,16 @@
       if (isNaN(n) || n <= 0) return null;
       return n;
     },
-    /** Стоимость с человека для занятия */
+    /**
+     * Стоимость с человека для занятия.
+     * Только собственная цена занятия — никакой общей «цены по умолчанию».
+     * Раньше она была, и из-за неё цена, введённая в одном занятии,
+     * подставлялась во все остальные. Занятия разные, цены тоже.
+     */
     classPrice(cls) {
       if (!cls) return 0;
       var own = Services.normalizePrice(cls.price);
-      if (own !== null) return own;
-      return Math.max(0, parseInt((State.settings && State.settings.defaultPrice) || 0, 10) || 0);
+      return own === null ? 0 : own;
     },
     /** Доход с одного занятия */
     classIncome(cls) {
@@ -3309,16 +3349,12 @@
         if (inc.type === 'abonement') { fromAbon += amt; abonCount++; }
         else fromExtra += amt;
       });
-      // Взносы клуба за этот месяц — из помесячного архива
-      var fromClub = 0;
-      State.clubGroups.forEach(function (g) {
-        var st = Services.clubGroupStatsForMonth(g, mk);
-        fromClub += st.collected;
-      });
+      /* Взносы клуба здесь НЕ считаем: они живут в своём разделе,
+         и дублировать их в «Клиентах» незачем. */
       return {
-        classes: fromClasses, abonements: fromAbon, extra: fromExtra, club: fromClub,
+        classes: fromClasses, abonements: fromAbon, extra: fromExtra,
         lessons: lessons, people: paidPeople, abonCount: abonCount,
-        total: fromClasses + fromAbon + fromExtra + fromClub
+        total: fromClasses + fromAbon + fromExtra
       };
     },
     /** Разовые поступления за месяц (для списка) */
@@ -4131,28 +4167,33 @@
       var m = Services.monthMoney(key);
       var card = this.$('moneyCard');
       if (card) {
-        var rows = '';
-        rows += '<div class="money-row"><span>Занятия' +
-          (m.people ? ' · ' + m.people + ' оплат' : '') + '</span><span>' +
-          UI.formatMoney(m.classes) + '</span></div>';
-        rows += '<div class="money-row"><span>Абонементы' +
-          (m.abonCount ? ' · ' + m.abonCount + ' шт.' : '') + '</span><span>' +
-          UI.formatMoney(m.abonements) + '</span></div>';
-        rows += '<div class="money-row"><span>Взносы клуба</span><span>' +
-          UI.formatMoney(m.club) + '</span></div>';
-        rows += '<div class="money-row"><span>Прочее</span><span>' +
-          UI.formatMoney(m.extra) + '</span></div>';
+        function row(icon, title, sub, sum, isZero) {
+          return '<div class="money-row' + (isZero ? ' is-zero' : '') + '">' +
+            '<span class="money-row-icon">' + icon + '</span>' +
+            '<span class="money-row-text">' + title +
+              (sub ? '<span class="money-row-sub">' + sub + '</span>' : '') +
+            '</span>' +
+            '<span class="money-row-sum">' + UI.formatMoney(sum) + '</span>' +
+          '</div>';
+        }
         card.innerHTML =
-          '<div class="money-total-label">Заработано за ' + Domain.monthLabel(key).toLowerCase() + '</div>' +
-          '<div class="money-total">' + UI.formatMoney(m.total) + '</div>' +
-          '<div class="money-rows" style="margin-top:10px;">' + rows + '</div>';
+          '<div class="money-hero">' +
+            '<div class="money-total-label">Заработано за ' +
+              Domain.monthLabel(key).toLowerCase() + '</div>' +
+            '<div class="money-total">' + UI.formatMoney(m.total) + '</div>' +
+          '</div>' +
+          '<div class="money-rows">' +
+            row('🎯', 'Занятия', m.people ? m.people + ' оплат' : 'нет оплат', m.classes, !m.classes) +
+            row('🎟', 'Абонементы', m.abonCount ? m.abonCount + ' шт.' : 'не продавались', m.abonements, !m.abonements) +
+            row('💰', 'Прочее', m.extra ? 'разовые поступления' : 'ничего не добавлено', m.extra, !m.extra) +
+          '</div>';
       }
 
       var listEl = this.$('incomeList');
       if (listEl) {
         var items = Services.incomesForMonth(key);
         listEl.innerHTML = items.length
-          ? items.map(function (inc) {
+          ? '<div class="section-caption">Поступления за месяц</div>' + items.map(function (inc) {
               var isAbon = inc.type === 'abonement';
               return '<div class="income-row" data-action="income-open" data-id="' + inc.id + '">' +
                 '<div><div class="income-row-note">' +
@@ -4679,10 +4720,8 @@
       var cls = id ? State.classes.find(function (c) { return c.id === id; }) : null;
       UI.fillClassForm(cls || null);
       var priceEl = UI.$('classPrice');
-      if (priceEl) {
-        var def = (State.settings && State.settings.defaultPrice) || 0;
-        priceEl.value = cls && cls.price ? cls.price : (def || '');
-      }
+      // Пустое поле у нового занятия — цену вводим каждый раз свою
+      if (priceEl) priceEl.value = (cls && cls.price) ? cls.price : '';
       // Список клиентов всегда открываем свёрнутым — форма и так длинная
       var listEl = UI.$('classClientSelect');
       var caret = UI.$('clientSelectCaret');
@@ -4725,12 +4764,6 @@
       else { Services.createClass(data); UI.showToast('Создано'); }
       State.selectedDate = data.date;
       State.currentWeekStart = Domain.getMonday(new Date(data.date + 'T12:00:00'));
-      // Запомнить цену как «обычную» — чтобы в следующий раз подставилась
-      var priceVal = Math.max(0, parseInt(data.price, 10) || 0);
-      if (priceVal > 0 && !clubGroupId) {
-        State.settings.defaultPrice = priceVal;
-        State.persist();
-      }
       UI.closeModal('classModal');
       UI.renderSchedule();
       UI.renderClients();
