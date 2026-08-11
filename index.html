@@ -74,6 +74,32 @@
       --shadow: 0 1px 2px rgba(0,0,0,0.25);
     }
 
+    /* Чёрная тема: глубокий чёрный фон, белый текст, минимум украшений.
+       Карточки отличаются от фона еле заметно — как в Down Dog. */
+    [data-theme="black"] {
+      --bg: #000000;
+      --card: #0e0e0e;
+      --text: #ffffff;
+      --text-muted: #8b8b8b;
+      --border: #232323;
+      --shadow: none;
+    }
+    [data-theme="black"] .card,
+    [data-theme="black"] .money-card,
+    [data-theme="black"] .settings-block,
+    [data-theme="black"] .stat-card,
+    [data-theme="black"] .income-row,
+    [data-theme="black"] .club-month-bar,
+    [data-theme="black"] .modal { box-shadow: none; }
+    [data-theme="black"] .header { background: #000; border-bottom-color: #1a1a1a; }
+    [data-theme="black"] .bottom-nav { background: #000; border-top-color: #1a1a1a; }
+    [data-theme="black"] .time-slot { border-color: #1a1a1a; }
+    [data-theme="black"] .time-class { background: #141414; border-color: #262626; }
+    [data-theme="black"] .money-hero { background: #0e0e0e; }
+    [data-theme="black"] input,
+    [data-theme="black"] textarea,
+    [data-theme="black"] select { background: #0e0e0e; border-color: #262626; color: #fff; }
+
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
     /* WebView иногда «съедает» тап из-за задержки на двойное нажатие и
@@ -722,6 +748,40 @@
     .day-total-sum { font-size: 1.15rem; font-weight: 700; color: var(--primary); }
     .day-total-detail { font-size: 0.68rem; color: var(--text-muted); margin-top: 2px; }
 
+    /* Заставка. Показывается поверх всего, пока приложение готовится,
+       и мягко исчезает. В APK закрывает белую вспышку при старте. */
+    .splash {
+      position: fixed; inset: 0; z-index: 9999;
+      background: #000; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 22px;
+      transition: opacity 0.45s ease, visibility 0.45s ease;
+    }
+    .splash.hide { opacity: 0; visibility: hidden; }
+    .splash-mark { width: 92px; height: 92px; animation: splashIn 0.6s ease both; }
+    .splash-name {
+      color: #fff; font-size: 1.05rem; font-weight: 500; letter-spacing: 0.08em;
+      animation: splashIn 0.6s ease 0.12s both;
+    }
+    @keyframes splashIn {
+      from { opacity: 0; transform: translateY(8px) scale(0.96); }
+      to { opacity: 1; transform: none; }
+    }
+
+    .theme-options { display: flex; gap: 8px; }
+    .theme-option {
+      flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px;
+      padding: 12px 6px; border: 1.5px solid var(--border); border-radius: 14px;
+      background: var(--card); color: var(--text-muted);
+      font-family: inherit; font-size: 0.72rem; font-weight: 600; cursor: pointer;
+    }
+    .theme-option.active { border-color: var(--primary); color: var(--primary); }
+    .theme-swatch {
+      width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--border);
+    }
+    .theme-swatch.light { background: linear-gradient(135deg, #ffffff 50%, #fdf2f4 50%); }
+    .theme-swatch.dark { background: linear-gradient(135deg, #292524 50%, #1c1917 50%); }
+    .theme-swatch.black { background: linear-gradient(135deg, #141414 50%, #000000 50%); }
+
     .collapse-toggle {
       width: 100%; display: flex; align-items: center; justify-content: space-between;
       gap: 8px; padding: 12px 14px; border: 1px solid var(--border);
@@ -1009,36 +1069,62 @@
     }
 
     /* —— Экран выбора контактов телефона —— */
-    .contact-pick-toolbar {
-      display: flex; gap: 8px; align-items: center; margin-bottom: 10px;
+    /* —— Окно «Контакты телефона» —— */
+    .contact-pick-head {
+      position: sticky; top: 0; z-index: 2;
+      background: var(--card); padding-bottom: 8px;
     }
-    .contact-pick-toolbar input {
-      flex: 1; min-width: 0;
+    .contact-search { position: relative; }
+    .contact-search-icon {
+      position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+      font-size: 0.85rem; opacity: 0.5; pointer-events: none;
+    }
+    .contact-search input {
+      width: 100%; padding-left: 36px; border-radius: 12px;
     }
     .contact-pick-count {
-      font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px;
+      font-size: 0.72rem; color: var(--text-muted); margin-top: 8px;
       display: flex; justify-content: space-between; align-items: center; gap: 8px;
     }
     .contact-pick-list {
-      max-height: 46vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
-      border: 1px solid var(--border); border-radius: 12px;
+      max-height: 48vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+      margin: 0 -4px 12px;
     }
     .contact-pick-row {
-      display: flex; align-items: center; gap: 10px;
-      padding: 10px 12px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 12px;
+      padding: 9px 4px; cursor: pointer;
     }
-    .contact-pick-row:last-child { border-bottom: none; }
-    .contact-pick-row.is-existing { opacity: 0.55; }
+    .contact-pick-row + .contact-pick-row { border-top: 1px solid var(--border); }
+    .contact-pick-row.is-existing { opacity: 0.45; }
     .contact-pick-row input[type="checkbox"] {
       width: 22px; height: 22px; flex: 0 0 auto; accent-color: var(--primary);
+      order: 3; margin-left: auto;
     }
+    .contact-avatar {
+      flex: 0 0 auto; width: 38px; height: 38px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--primary-light); color: var(--primary);
+      font-weight: 700; font-size: 0.95rem;
+    }
+    .contact-avatar.is-number { font-size: 0.9rem; }
     .contact-pick-info { flex: 1; min-width: 0; }
     .contact-pick-name {
-      font-weight: 600; font-size: 0.9rem;
+      font-weight: 600; font-size: 0.9rem; color: var(--text);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
-    .contact-pick-phone { font-size: 0.75rem; color: var(--text-muted); }
-    .contact-pick-empty { padding: 24px 12px; text-align: center; color: var(--text-muted); font-size: 0.85rem; }
+    .contact-pick-phone {
+      font-size: 0.75rem; color: var(--text-muted); margin-top: 1px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .contact-pick-tag {
+      font-size: 0.62rem; font-weight: 600; color: var(--text-muted);
+      border: 1px solid var(--border); border-radius: 999px;
+      padding: 1px 7px; margin-left: 6px; white-space: nowrap;
+    }
+    .contact-pick-empty {
+      padding: 32px 12px; text-align: center; color: var(--text-muted); font-size: 0.85rem;
+    }
+    .contact-pick-empty .empty-icon { font-size: 1.8rem; margin-bottom: 8px; }
   </style>
 </head>
 <body>
@@ -1071,20 +1157,20 @@
         <h2>Контакты телефона</h2>
         <button type="button" class="modal-close" data-close="contactsPickModal">✕</button>
       </div>
-      <div class="contact-pick-toolbar">
-        <input type="text" id="contactsPickSearch" placeholder="Поиск по имени или номеру" autocomplete="off">
-      </div>
-      <div class="contact-pick-count">
-        <span id="contactsPickCount">—</span>
-        <button type="button" class="link-btn" data-action="contacts-toggle-all">Выбрать все</button>
+      <div class="contact-pick-head">
+        <div class="contact-search">
+          <span class="contact-search-icon">🔍</span>
+          <input type="text" id="contactsPickSearch" placeholder="Имя или номер" autocomplete="off">
+        </div>
+        <div class="contact-pick-count">
+          <span id="contactsPickCount">—</span>
+          <button type="button" class="link-btn" data-action="contacts-toggle-all">Выбрать все</button>
+        </div>
       </div>
       <div class="contact-pick-list" id="contactsPickList"></div>
-      <button type="button" class="btn btn-primary btn-block mt-3" data-action="contacts-add-selected">
+      <button type="button" class="btn btn-primary btn-block" id="contactsAddBtn" data-action="contacts-add-selected">
         Добавить выбранных
       </button>
-      <p class="text-sm text-muted" style="margin-top:8px;font-size:0.7rem;">
-        Серым отмечены те, кто уже есть в списке клиентов — они пропускаются.
-      </p>
     </div>
   </div>
 
@@ -1224,9 +1310,19 @@
       </div>
       <div class="settings-block">
         <h3>Тема</h3>
-        <div class="settings-row">
-          <span>Тёмная тема</span>
-          <input type="checkbox" id="settingDark" style="width:22px;height:22px;accent-color:var(--primary);">
+        <div class="theme-options" id="themeOptions">
+          <button type="button" class="theme-option" data-theme-pick="light">
+            <span class="theme-swatch light"></span>
+            <span>Светлая</span>
+          </button>
+          <button type="button" class="theme-option" data-theme-pick="dark">
+            <span class="theme-swatch dark"></span>
+            <span>Тёмная</span>
+          </button>
+          <button type="button" class="theme-option" data-theme-pick="black">
+            <span class="theme-swatch black"></span>
+            <span>Чёрная</span>
+          </button>
         </div>
       </div>
       <div class="settings-block">
@@ -1326,6 +1422,18 @@
         <button type="button" class="btn btn-danger btn-block mt-2 hidden" id="btnDeleteClient" data-action="client-delete">Удалить</button>
       </form>
     </div>
+  </div>
+
+  <div class="splash" id="splash">
+    <svg class="splash-mark" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="6" y="12" width="52" height="46" rx="12" stroke="#fff" stroke-width="3.5"/>
+      <path d="M6 26h52" stroke="#fff" stroke-width="3.5"/>
+      <path d="M20 6v10M44 6v10" stroke="#fff" stroke-width="3.5" stroke-linecap="round"/>
+      <circle cx="32" cy="36" r="3.4" fill="#fff"/>
+      <path d="M32 40.5v6m0 0l-5.5 6m5.5-6l5.5 6M25 42.5l7-2 7 2"
+            stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div class="splash-name">calendar for trainer</div>
   </div>
 
   <div class="modal-overlay" id="classModal">
@@ -1524,7 +1632,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-11 · 15',
+    BUILD: '2026-08-11 · 16',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -1534,7 +1642,7 @@
     COLOR_PRESETS: ['#e11d48', '#db2777', '#c026d3', '#7c3aed', '#2563eb', '#0891b2', '#059669', '#d97706'],
     DEFAULT_SETTINGS: {
       calendarName: '', dark: false, primary: '#e11d48',
-      calStyle: 'standard', profileName: '', profilePhone: '',
+      calStyle: 'standard', theme: 'light', profileName: '', profilePhone: '',
       yandexClientId: '', clubMonth: ''
     },
     /* ClientID можно задать здесь или в Настройках */
@@ -3617,27 +3725,61 @@
         }
         shown++;
         var exists = Services.clientExists(name, phone);
+        /* В телефонной книге имя часто записано как «+79001234567 Володя».
+           Показывать номер дважды незачем — вырезаем его из имени. */
+        var shownName = UI.cleanContactName(name, phone);
+        var initial = UI.contactInitial(shownName);
         html += '<label class="contact-pick-row' + (exists ? ' is-existing' : '') + '">' +
-          '<input type="checkbox" data-index="' + i + '"' + (exists ? ' disabled' : '') + '>' +
+          '<span class="contact-avatar' + (initial === '#' ? ' is-number' : '') + '">' +
+            Domain.escapeHtml(initial) + '</span>' +
           '<span class="contact-pick-info">' +
-            '<span class="contact-pick-name">' + Domain.escapeHtml(name || 'Без имени') + '</span>' +
-            '<span class="contact-pick-phone">' + Domain.escapeHtml(phone || '') +
-              (exists ? ' · уже в клиентах' : '') + '</span>' +
+            '<span class="contact-pick-name">' + Domain.escapeHtml(shownName) +
+              (exists ? '<span class="contact-pick-tag">уже добавлен</span>' : '') + '</span>' +
+            (phone ? '<span class="contact-pick-phone">' + Domain.escapeHtml(phone) + '</span>' : '') +
           '</span>' +
+          '<input type="checkbox" data-index="' + i + '"' + (exists ? ' disabled' : '') + '>' +
         '</label>';
       });
       box.innerHTML = shown
         ? html
-        : '<div class="contact-pick-empty">Ничего не найдено</div>';
+        : '<div class="contact-pick-empty"><div class="empty-icon">🔍</div>' +
+          (q ? 'По запросу ничего не найдено' : 'Контактов нет') + '</div>';
       box.onchange = function () { UI.updateContactsPickCount(); };
       this.updateContactsPickCount();
+    },
+    /** Убрать из имени номер телефона, если он там продублирован */
+    cleanContactName(name, phone) {
+      var n = (name || '').trim();
+      if (!n) return phone ? 'Без имени' : 'Без имени';
+      // «+79001234567 Володя» → «Володя»
+      var stripped = n.replace(/^[+\d][\d\s\-()]{5,}/, '').trim();
+      if (stripped) return stripped;
+      // Имени нет вовсе — только номер
+      return phone ? 'Без имени' : n;
+    },
+    /** Первая буква для кружка-аватарки */
+    contactInitial(name) {
+      var n = (name || '').trim();
+      if (!n || n === 'Без имени') return '#';
+      var ch = n.charAt(0).toUpperCase();
+      return /[A-ZА-ЯЁ]/.test(ch) ? ch : '#';
     },
     updateContactsPickCount() {
       var el = this.$('contactsPickCount');
       if (!el) return;
       var total = document.querySelectorAll('#contactsPickList input[type=checkbox]').length;
       var picked = document.querySelectorAll('#contactsPickList input[type=checkbox]:checked').length;
-      el.textContent = 'Показано: ' + total + ' · выбрано: ' + picked;
+      el.textContent = picked
+        ? 'Выбрано: ' + picked + ' из ' + total
+        : 'Найдено: ' + total;
+      var btn = this.$('contactsAddBtn');
+      if (btn) {
+        btn.disabled = picked === 0;
+        btn.style.opacity = picked === 0 ? '0.5' : '1';
+        btn.textContent = picked
+          ? 'Добавить ' + picked
+          : 'Добавить выбранных';
+      }
     },
     updateContactsStatus() {
       var hasNative = !!(window.AndroidContacts &&
@@ -3745,13 +3887,22 @@
     closeModal(id) { this.$(id).classList.remove('show'); },
     applyTheme() {
       var s = State.settings;
-      document.documentElement.setAttribute('data-theme', s.dark ? 'dark' : 'light');
+      var themeName = s.theme || (s.dark ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', themeName);
+      document.querySelectorAll('[data-theme-pick]').forEach(function (b) {
+        b.classList.toggle('active', b.dataset.themePick === themeName);
+      });
       var calStyle = s.calStyle || 'standard';
       if (calStyle === 'compact') calStyle = 'standard';
       document.documentElement.setAttribute('data-cal-style', calStyle);
       document.documentElement.style.setProperty('--primary', s.primary);
       document.documentElement.style.setProperty('--primary-dark', Domain.shadeColor(s.primary, -20));
-      document.documentElement.style.setProperty('--primary-light', s.dark ? Domain.shadeColor(s.primary, -55) : Domain.shadeColor(s.primary, 88));
+      var isDarkish = themeName !== 'light';
+      document.documentElement.style.setProperty('--primary-light',
+        themeName === 'black' ? Domain.shadeColor(s.primary, -72)
+          : (isDarkish ? Domain.shadeColor(s.primary, -55) : Domain.shadeColor(s.primary, 88)));
+      var themeMeta = document.querySelector('meta[name="theme-color"]');
+      if (themeMeta && themeName === 'black') themeMeta.content = '#000000';
       var meta = document.querySelector('meta[name="theme-color"]');
       if (meta) meta.content = s.primary;
       this.$('appTitle').textContent = s.calendarName ? '💃 ' + s.calendarName : '💃 Танцевальный тренер';
@@ -3759,7 +3910,7 @@
       var ulogin = (State.currentUser && State.currentUser.login) || s.profilePhone || '';
       this.$('appSubtitle').textContent = uname ? (uname + (ulogin ? ' · ' + ulogin : '')) : 'Учёт клиентов и занятий';
       this.$('settingCalendarName').value = s.calendarName || '';
-      this.$('settingDark').checked = !!s.dark;
+      // тему рисуют кнопки выбора, отдельного переключателя больше нет
       this.$('settingColor').value = s.primary || '#e11d48';
       document.querySelectorAll('.style-option').forEach(function (el) {
         el.classList.toggle('active', el.dataset.style === (s.calStyle || 'standard'));
@@ -4969,7 +5120,6 @@
     saveSettingsFromForm() {
       Services.updateSettings({
         calendarName: UI.$('settingCalendarName').value.trim(),
-        dark: UI.$('settingDark').checked,
         primary: UI.$('settingColor').value
       });
       UI.applyTheme();
@@ -5121,6 +5271,7 @@
         case 'club-toggle-pay':
           Controllers.toggleClubPayment(el.dataset.group, el.dataset.member, el.checked, el.dataset.month);
           break;
+        case 'theme-pick': break;
         case 'toggle-client-select': {
           var listEl = UI.$('classClientSelect');
           var caret = UI.$('clientSelectCaret');
@@ -5399,12 +5550,34 @@
         UI.showToast('Абонемент действует с ' + Domain.formatDisplayDate(abonStart.value));
       });
     }
+    // Заставка уходит, когда приложение готово к работе
+    (function hideSplash() {
+      var sp = document.getElementById('splash');
+      if (!sp) return;
+      setTimeout(function () {
+        sp.classList.add('hide');
+        setTimeout(function () { if (sp.parentNode) sp.parentNode.removeChild(sp); }, 600);
+      }, 700);
+    })();
+
     var incomeForm = UI.$('incomeForm');
     if (incomeForm) incomeForm.addEventListener('submit', Controllers.saveIncome);
     var moneyMonthSel = UI.$('moneyMonthSelect');
     if (moneyMonthSel) {
       moneyMonthSel.addEventListener('change', function () {
         Controllers.setMoneyMonth(moneyMonthSel.value);
+      });
+    }
+    var themeBox = UI.$('themeOptions');
+    if (themeBox) {
+      themeBox.addEventListener('click', function (e) {
+        var btn = e.target.closest('[data-theme-pick]');
+        if (!btn) return;
+        var name = btn.dataset.themePick;
+        State.settings.theme = name;
+        State.settings.dark = (name !== 'light');
+        State.persist();
+        UI.applyTheme();
       });
     }
     var clubMonthSel = UI.$('clubMonthSelect');
@@ -5416,7 +5589,6 @@
     UI.$('clientSearch').addEventListener('input', function () { UI.renderClients(); });
     UI.$('weekPicker').addEventListener('change', function (e) { Controllers.onJumpToDate(e.target.value); });
     UI.$('settingCalendarName').addEventListener('change', function () { Controllers.saveSettingsFromForm(); });
-    UI.$('settingDark').addEventListener('change', function () { Controllers.saveSettingsFromForm(); });
     UI.$('settingColor').addEventListener('change', function () { Controllers.saveSettingsFromForm(); });
     UI.$('styleOptions').addEventListener('click', function (e) {
       var opt = e.target.closest('[data-style]');
