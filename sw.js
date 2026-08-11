@@ -8,7 +8,7 @@
 
    Теперь главную страницу забираем с cache: 'no-store' — мимо HTTP-кэша,
    всегда прямо с сервера. Остальное кэшируется как раньше. */
-const CACHE = 'dance-trainer-v16';
+const CACHE = 'dance-trainer-v18';
 const ASSETS = ['./', './index.html'];
 
 self.addEventListener('install', (e) => {

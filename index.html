@@ -172,6 +172,14 @@
 
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
+    /* Сам документ по умолчанию белый. Там, где страница не закрывала его
+       целиком — над модальным окном и по краям при прокрутке — просвечивала
+       белая полоса и белые уголки. Красим и его тоже. */
+    html {
+      background: var(--bg);
+      overscroll-behavior: none;
+    }
+
     /* WebView иногда «съедает» тап из-за задержки на двойное нажатие и
        из-за выделения текста на кнопках. Оба поведения отключаем. */
     button, .chip, .nav-item, .btn, .style-option, .color-swatch,
@@ -256,6 +264,9 @@
       padding: 12px;
       padding-left: max(var(--sal), 12px);
       padding-right: max(var(--sar), 12px);
+      /* Круглая кнопка «+» висит поверх содержимого и перекрывала
+         итог дня и последнюю карточку в списках. Оставляем под неё место. */
+      padding-bottom: 84px;
       max-width: 520px; margin: 0 auto;
     }
     .section { display: none; }
@@ -307,6 +318,9 @@
       border-radius: 12px; font-size: 0.9375rem; background: var(--card); color: var(--text);
       font-family: inherit; letter-spacing: -0.01em;
     }
+    /* У textarea браузер рисует в углу ручку растягивания — она выглядела
+       случайной точкой на скруглении. На телефоне тянуть поле всё равно нечем. */
+    .form-group textarea, textarea { resize: none; }
     .form-group input:focus, .form-group textarea:focus, .form-group select:focus {
       outline: none; border-color: var(--primary);
       box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent);
@@ -517,13 +531,17 @@
       content: ''; width: 4px; height: 4px; background: var(--primary);
       border-radius: 50%; margin-top: 4px;
     }
-    .day-btn.active.has-classes::after { background: white; }
+    .day-btn.active.has-classes::after { background: rgba(255,255,255,0.9); }
     .day-btn.today:not(.active) { box-shadow: 0 0 0 1.5px var(--primary); }
 
     .time-grid {
-      border: 1px solid var(--border); border-radius: 12px;
-      background: var(--card); overflow: visible;
+      border: 1px solid var(--border); border-radius: 14px;
+      background: var(--card);
+      /* Колонка часов и разделители рисовались поверх скруглённого угла —
+         получался обрубленный уголок. Обрезаем всё по форме сетки. */
+      overflow: hidden;
       position: relative;
+      isolation: isolate;
     }
     .time-slot {
       display: flex; height: 96px;
@@ -560,7 +578,9 @@
       border-radius: 10px;
       padding: 6px 10px;
       cursor: pointer;
-      background: #fff;
+      /* было жёстко белым — в тёмных темах карточка светилась,
+         пока её не перекрывало правило ниже. Берём цвет темы. */
+      background: var(--card);
       box-sizing: border-box;
       overflow-x: hidden;
       overflow-y: auto;
@@ -710,6 +730,8 @@
     .modal-overlay.show { display: flex; }
     .modal {
       background: var(--card); border-radius: 24px 24px 0 0;
+      /* без этого прокручиваемое содержимое рисуется поверх скруглённых углов */
+      overflow-x: hidden;
       width: 100%; max-width: 480px;
       max-height: calc(92vh - var(--sat));
       overflow-y: auto;
@@ -812,10 +834,15 @@
     .day-total {
       display: flex; align-items: center; justify-content: space-between;
       margin-top: 10px; padding: 12px 14px; border-radius: 14px;
+      /* справа оставляем коридор под плавающую кнопку */
+      padding-right: 84px;
       background: var(--primary-light); border: 1px solid transparent;
     }
     .day-total-label { font-size: 0.8rem; font-weight: 600; color: var(--text); }
-    .day-total-sum { font-size: 1.15rem; font-weight: 700; color: var(--primary); }
+    .day-total-sum {
+      font-size: 1.15rem; font-weight: 700; color: var(--primary);
+      white-space: nowrap;
+    }
     .day-total-detail { font-size: 0.68rem; color: var(--text-muted); margin-top: 2px; }
 
     /* Заставка. Показывается поверх всего, пока приложение готовится,
@@ -1016,7 +1043,7 @@
       font-size: 0.62rem; font-weight: 700;
       padding: 1px 5px; border-radius: 999px; margin-left: 2px;
       border: 1.5px solid currentColor;
-      background: rgba(255, 255, 255, 0.45);
+      background: color-mix(in srgb, var(--card) 70%, transparent);
       opacity: 0.95;
     }
     .name-chip.paid .name-abon {
@@ -1073,7 +1100,7 @@
     }
     .yandex-icon {
       display: inline-flex; width: 20px; height: 20px; border-radius: 4px;
-      background: #fff; color: #fc3f1d; font-weight: 700; font-size: 0.75rem;
+      background: #fc3f1d; color: #fff; font-weight: 700; font-size: 0.75rem;
       align-items: center; justify-content: center;
     }
     .auth-switch { text-align: center; margin-top: 16px; font-size: 0.8rem; color: var(--text-muted); }
@@ -1090,7 +1117,9 @@
     }
 
     .storage-warn {
-      background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412;
+      background: rgba(245, 158, 11, 0.12);
+      border: 1px solid rgba(245, 158, 11, 0.4);
+      color: #b45309;
       border-radius: 12px; padding: 12px 14px; font-size: 0.78rem; line-height: 1.45;
       margin-bottom: 14px;
     }
@@ -1343,11 +1372,11 @@
       </button>
       <div id="incomeList"></div>
 
-      <div class="section-caption">Занятия</div>
+      <div class="section-caption" id="statsCaption">За месяц</div>
       <div class="stats mini">
-        <div class="stat-card"><div class="stat-value" id="statWeek">0</div><div class="stat-label">за неделю</div></div>
-        <div class="stat-card"><div class="stat-value" id="statMonth">0</div><div class="stat-label">за месяц</div></div>
-        <div class="stat-card"><div class="stat-value" id="statClasses">0</div><div class="stat-label">всего</div></div>
+        <div class="stat-card"><div class="stat-value" id="statMonth">0</div><div class="stat-label">занятий</div></div>
+        <div class="stat-card"><div class="stat-value" id="statWeek">0</div><div class="stat-label">учеников</div></div>
+        <div class="stat-card"><div class="stat-value" id="statClasses">0</div><div class="stat-label">оплат</div></div>
       </div>
 
       <div class="section-caption">Клиенты · <span id="statClients">0</span></div>
@@ -1712,7 +1741,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-11 · 17',
+    BUILD: '2026-08-11 · 19',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -3050,11 +3079,28 @@
       });
       State.persist();
     },
+    /**
+     * Убрать абонемент целиком.
+     *
+     * Важно: оплаты, которые абонемент проставил сам, тоже снимаются.
+     * Раньше они оставались, и выданный по ошибке абонемент навсегда
+     * помечал занятия оплаченными. Ручные отметки «Оплатил», сделанные
+     * без абонемента, не трогаем — они не его работа.
+     */
     clearAbonement(clientId) {
       var c = State.clients.find(function (x) { return x.id === clientId; });
-      if (!c) return;
+      if (!c) return 0;
+      var debits = (c.abonement && c.abonement.debits) || {};
+      var cleared = 0;
+      Object.keys(debits).forEach(function (classId) {
+        if (!debits[classId]) return;
+        var cls = State.classes.find(function (x) { return x.id === classId; });
+        if (!cls || !cls.payments) return;
+        if (cls.payments[c.id]) { cls.payments[c.id] = false; cleared++; }
+      });
       c.abonement = null;
       State.persist();
+      return cleared;
     },
     /** Сменить дату начала действия абонемента вручную (выдал задним числом и т.п.) */
     setAbonementStart(clientId, dateStr) {
@@ -3161,6 +3207,10 @@
           cls.payments[cid] = true;
           return;
         }
+        /* Занятие уже отмечено оплаченным вручную (наличными), а списания
+           за него не было — значит, человек заплатил деньгами. Списывать
+           сверху ещё и абонемент нельзя: это двойная оплата. */
+        if (cls.payments[cid]) return;
         if ((c.abonement.remaining || 0) > 0) {
           var ok = Services.debitAbonement(cid, cls.id);
           if (ok) cls.payments[cid] = true;
@@ -3291,23 +3341,30 @@
       Object.assign(State.settings, partial);
       State.persist();
     },
-    getStats() {
-      var now = new Date();
-      var weekStart = Domain.getMonday(now);
-      var weekEnd = Domain.addDays(weekStart, 6);
-      var monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      var monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    /**
+     * Показатели за ВЫБРАННЫЙ месяц, а не всегда за текущий.
+     * Раньше цифры не менялись при переключении месяца — июль показывал
+     * августовские занятия.
+     */
+    getStats(monthKey) {
+      var mk = monthKey || Domain.currentMonthKey();
+      var inMonth = State.classes.filter(function (c) {
+        return c.date && c.date.slice(0, 7) === mk;
+      });
+      var peopleIds = {};
+      var payments = 0;
+      inMonth.forEach(function (c) {
+        (c.clientIds || []).forEach(function (id) {
+          peopleIds[id] = true;
+          if (c.payments && c.payments[id]) payments++;
+        });
+      });
       return {
         clients: State.clients.length,
         total: State.classes.length,
-        week: State.classes.filter(function (c) {
-          var d = new Date(c.date + 'T12:00:00');
-          return d >= weekStart && d <= weekEnd;
-        }).length,
-        month: State.classes.filter(function (c) {
-          var d = new Date(c.date + 'T12:00:00');
-          return d >= monthStart && d <= monthEnd;
-        }).length
+        lessons: inMonth.length,
+        people: Object.keys(peopleIds).length,
+        payments: payments
       };
     },
     exportJson() {
@@ -4202,11 +4259,13 @@
         });
       }
       this.renderMoney();
-      var stats = Services.getStats();
+      var stats = Services.getStats(this.moneyMonth());
       this.$('statClients').textContent = stats.clients;
-      this.$('statClasses').textContent = stats.total;
-      this.$('statWeek').textContent = stats.week;
-      this.$('statMonth').textContent = stats.month;
+      this.$('statMonth').textContent = stats.lessons;
+      this.$('statWeek').textContent = stats.people;
+      this.$('statClasses').textContent = stats.payments;
+      var cap = this.$('statsCaption');
+      if (cap) cap.textContent = 'За ' + Domain.monthLabel(this.moneyMonth()).toLowerCase();
       var list = this.$('clientsList');
       if (!clients.length) {
         list.innerHTML = '<div class="empty"><div class="empty-icon">👥</div><div>Нет клиентов</div></div>';
@@ -4965,6 +5024,8 @@
     openClassModal(id) {
       var cls = id ? State.classes.find(function (c) { return c.id === id; }) : null;
       UI.fillClassForm(cls || null);
+      // Не оставляем в форме идентификатор прошлого занятия
+      if (UI.$('classId')) UI.$('classId').value = cls ? cls.id : '';
       var priceEl = UI.$('classPrice');
       // Пустое поле у нового занятия — цену вводим каждый раз свою
       if (priceEl) priceEl.value = (cls && cls.price) ? cls.price : '';
@@ -5015,9 +5076,30 @@
       UI.renderSchedule();
       UI.renderClients();
     },
+    /**
+     * Удалить занятие.
+     *
+     * Здесь была ошибка. Идентификатор брался сначала из формы редактирования
+     * (classId), а она хранит последнее ОТКРЫВАВШЕЕСЯ занятие. Нажимаешь
+     * «Удалить» в окне просмотра другого занятия — и удаляется не то, что
+     * на экране, а старое. Если то занятие уже удалено, не происходит ничего:
+     * ровно то, что вы видели, нажимая три раза подряд.
+     *
+     * Теперь смотрим, какое окно открыто, и берём его занятие.
+     */
     deleteClass() {
-      var id = UI.$('classId').value || State.currentDetailClassId;
-      if (!id || !confirm('Удалить занятие?')) return;
+      var detailOpen = document.getElementById('classDetailModal');
+      detailOpen = detailOpen && detailOpen.classList.contains('show');
+      var id = detailOpen
+        ? (State.currentDetailClassId || UI.$('classId').value)
+        : (UI.$('classId').value || State.currentDetailClassId);
+      var cls = State.classes.find(function (x) { return x.id === id; });
+      if (!cls) {
+        UI.showToast('Занятие не найдено — обновите экран');
+        return;
+      }
+      if (!confirm('Удалить занятие ' + Domain.formatDisplayDate(cls.date) +
+          ' в ' + cls.time + '?')) return;
       Services.deleteClass(id);
       State.currentDetailClassId = null;
       UI.closeModal('classModal');
@@ -5438,13 +5520,19 @@
         case 'abon-clear': {
           var cid2 = UI.$('clientId').value;
           if (!cid2) break;
-          if (!confirm('Сбросить абонемент клиента?')) break;
-          Services.clearAbonement(cid2);
+          if (!confirm('Сбросить абонемент клиента?\n\nОплаты, проставленные этим абонементом, тоже снимутся.')) break;
+          var clearedN = Services.clearAbonement(cid2);
           var client2 = State.clients.find(function (x) { return x.id === cid2; });
           UI.renderAbonementInfo(client2);
           UI.renderClients();
           UI.renderSchedule();
-          UI.showToast('Абонемент сброшен');
+          if (State.currentDetailClassId) {
+            var dcl = State.classes.find(function (x) { return x.id === State.currentDetailClassId; });
+            if (dcl) UI.renderClassDetail(dcl);
+          }
+          UI.showToast(clearedN
+            ? 'Абонемент сброшен · снято оплат: ' + clearedN
+            : 'Абонемент сброшен');
           break;
         }
         case 'client-open': Controllers.openClientModal(el.dataset.id); break;
