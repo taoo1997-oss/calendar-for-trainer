@@ -1850,7 +1850,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-12 · 23',
+    BUILD: '2026-08-12 · 25',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -3137,7 +3137,10 @@
       sessions = parseInt(sessions, 10);
       if ([4, 6, 8].indexOf(sessions) < 0) return null;
       var prevRem = (c.abonement && c.abonement.remaining > 0) ? c.abonement.remaining : 0;
-      var prevTotal = (c.abonement && c.abonement.total > 0) ? c.abonement.total : 0;
+      /* «Всего» тоже переносится только у действующего абонемента.
+         Если прошлый израсходован до нуля — начинается новый период,
+         и бабл должен показывать 4/4, а не 4/12. */
+      var prevTotal = (prevRem > 0 && c.abonement && c.abonement.total > 0) ? c.abonement.total : 0;
       var debits = (c.abonement && c.abonement.debits) ? Object.assign({}, c.abonement.debits) : {};
       /* Дата выдачи.
          — Если абонемент выдаётся впервые или прошлый уже закончился (remaining = 0),
@@ -5725,6 +5728,11 @@
       var bv = document.getElementById('buildVersion');
       if (bv) bv.textContent = 'сборка ' + CONFIG.BUILD;
       console.log('[Танцевальный тренер] сборка ' + CONFIG.BUILD);
+      /* Ручка для автотестов и разбора проблем: из консоли браузера
+         доступно window.__dt.State / .Services / .Domain / .UI */
+      try {
+        window.__dt = { CONFIG: CONFIG, State: State, Services: Services, Domain: Domain, UI: UI };
+      } catch (e) {}
     } catch (e) {}
 
     UI.$('bottomNav').addEventListener('click', function (e) {
