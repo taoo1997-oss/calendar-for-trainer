@@ -1850,7 +1850,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-12 · 25',
+    BUILD: '2026-08-12 · 27',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -3669,14 +3669,37 @@
      * в уме на количество учеников больше не нужно.
      */
     classIncome(cls) {
-      if (!cls) return 0;
-      // Занятия клубных групп оплачиваются взносом, а не поштучно
-      if (cls.clubGroupId) return 0;
+      return Services.classIncomeByClient(cls).reduce(function (sum, row) {
+        return sum + row.amount;
+      }, 0);
+    },
+    /**
+     * Доля каждого участника занятия — сколько он должен за него заплатить.
+     *
+     * Важно: доля считается от числа ВСЕХ участников, а не от числа
+     * заплативших. Иначе занятие на двоих за 2500, где заплатил один,
+     * приносило бы все 2500 — как будто второй тоже расплатился.
+     *
+     * Возвращает объект вида { clientId: сумма }.
+     */
+    classSharePerClient(cls) {
+      var shares = {};
+      if (!cls || cls.clubGroupId) return shares;
       var price = Services.classPrice(cls);
-      if (!price) return 0;
-      var payers = Services.classPayingCount(cls);
-      if (!payers) return 0;
-      return cls.isGroup ? price * payers : price;
+      var ids = cls.clientIds || [];
+      if (!price || !ids.length) return shares;
+
+      if (cls.isGroup) {
+        // Цена указана за человека
+        ids.forEach(function (cid) { shares[cid] = price; });
+        return shares;
+      }
+      // Цена указана за занятие целиком — делим поровну на всех участников,
+      // остаток от деления отдаём первому, чтобы сумма долей сошлась с ценой.
+      var base = Math.floor(price / ids.length);
+      ids.forEach(function (cid) { shares[cid] = base; });
+      shares[ids[0]] += price - base * ids.length;
+      return shares;
     },
     /** Сколько человек реально заплатили за занятие деньгами */
     classPayingCount(cls) {
@@ -3700,8 +3723,7 @@
      */
     classIncomeByClient(cls) {
       if (!cls || cls.clubGroupId) return [];
-      var price = Services.classPrice(cls);
-      if (!price) return [];
+      var shares = Services.classSharePerClient(cls);
       var payers = (cls.clientIds || []).filter(function (cid) {
         if (!(cls.payments && cls.payments[cid])) return false;
         var c = State.clients.find(function (x) { return x.id === cid; });
@@ -3709,21 +3731,12 @@
       });
       if (!payers.length) return [];
 
-      var shares;
-      if (cls.isGroup) {
-        shares = payers.map(function () { return price; });
-      } else {
-        var base = Math.floor(price / payers.length);
-        shares = payers.map(function () { return base; });
-        shares[0] += price - base * payers.length;
-      }
-
-      return payers.map(function (cid, i) {
+      return payers.map(function (cid) {
         var c = State.clients.find(function (x) { return x.id === cid; });
         return {
           clientId: cid,
           name: c ? c.name : 'Удалён',
-          amount: shares[i],
+          amount: shares[cid] || 0,
           date: cls.date,
           time: cls.time,
           title: cls.title || '',
@@ -5740,13 +5753,95 @@
       if (tab) UI.switchTab(tab.dataset.tab);
     });
 
+    /* —— Нижняя навигация и системные кнопки Android ——
+
+       В обычном браузере отступ снизу сообщает сама система через
+       env(safe-area-inset-bottom). В WebView (наш APK) и в некоторых
+       прошивках он приезжает нулевым — тогда панель приложения оказывается
+       под системными кнопками «назад/домой/меню».
+
+       Порядок доверия:
+         1) нативная обёртка вызвала window.__setSafeInsets(...) — верим ей;
+         2) env() вернул ненулевой отступ — верим ему;
+         3) иначе прикидываем высоту системной панели сами.
+       Прикидка включается только в установленном приложении (APK или PWA),
+       чтобы во вкладке браузера не спутать системную панель с адресной строкой. */
+    (function setupSafeInsets() {
+      var root = document.documentElement;
+
+      window.__setSafeInsets = function (top, right, bottom, left) {
+        window.__safeInsetsFromNative = true;
+        root.style.setProperty('--sat', (parseFloat(top) || 0) + 'px');
+        root.style.setProperty('--sar', (parseFloat(right) || 0) + 'px');
+        root.style.setProperty('--sab', (parseFloat(bottom) || 0) + 'px');
+        root.style.setProperty('--sal', (parseFloat(left) || 0) + 'px');
+      };
+
+      function envBottomPx() {
+        var probe = document.createElement('div');
+        probe.style.cssText = 'position:fixed;left:-9999px;bottom:0;width:1px;' +
+          'height:env(safe-area-inset-bottom,0px);pointer-events:none;';
+        document.body.appendChild(probe);
+        var h = probe.getBoundingClientRect().height;
+        probe.parentNode.removeChild(probe);
+        return h;
+      }
+
+      function isInstalledApp() {
+        if (/; wv\)/i.test(navigator.userAgent)) return true;            // Android WebView
+        if (window.matchMedia('(display-mode: standalone)').matches) return true;
+        if (window.matchMedia('(display-mode: fullscreen)').matches) return true;
+        return false;
+      }
+
+      function apply() {
+        if (window.__safeInsetsFromNative) return;
+        if (!/Android/i.test(navigator.userAgent)) return;
+        if (envBottomPx() > 0) return;
+        if (!isInstalledApp()) return;
+
+        var screenH = (window.screen && window.screen.height) || 0;
+        var topInset = parseFloat(getComputedStyle(root).getPropertyValue('--sat')) || 0;
+        var gap = Math.round(screenH - window.innerHeight - topInset);
+        // Панель кнопок Android — примерно 24–56 CSS-пикселей. Всё, что вне
+        // этого диапазона, — не она, и трогать отступ не надо.
+        if (gap >= 16 && gap <= 72) root.style.setProperty('--sab', gap + 'px');
+      }
+
+      apply();
+      setTimeout(apply, 400);
+      window.addEventListener('resize', apply);
+      window.addEventListener('orientationchange', function () { setTimeout(apply, 200); });
+    })();
+
     /* —— Маска телефона для всех полей type="tel" ——
        Ввод только цифр, формат +7 999 123-45-67, ровно 11 цифр. */
     Array.prototype.forEach.call(document.querySelectorAll('input[type="tel"]'), function (el) {
-      el.setAttribute('inputmode', 'numeric');
+      el.setAttribute('inputmode', 'tel');
       el.setAttribute('maxlength', '18');
       el.setAttribute('autocomplete', 'tel');
       if (!el.placeholder || el.placeholder === '+7 ...') el.placeholder = '+7 999 123-45-67';
+    });
+
+    /* —— Предзаполненный «+7» ——
+       Встал в поле — код страны уже стоит, остаётся набрать десять цифр.
+       Ушёл, ничего не набрав, — поле снова пустое, чтобы у клиентов без
+       телефона не сохранялся огрызок «+7». */
+    document.addEventListener('focusin', function (e) {
+      var el = e.target;
+      if (!el || el.tagName !== 'INPUT' || el.type !== 'tel') return;
+      if (!el.value) {
+        el.value = '+7 ';
+        try { el.setSelectionRange(el.value.length, el.value.length); } catch (err) {}
+      }
+    });
+    document.addEventListener('focusout', function (e) {
+      var el = e.target;
+      if (!el || el.tagName !== 'INPUT' || el.type !== 'tel') return;
+      if (Domain.normalizePhone(el.value).length <= 1) {
+        el.value = '';
+        el.classList.remove('phone-incomplete');
+      }
     });
     document.addEventListener('input', function (e) {
       var el = e.target;
