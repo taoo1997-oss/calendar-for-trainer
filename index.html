@@ -41,6 +41,10 @@
   -->
   <style>
     :root {
+      /* Пока браузер считает страницу светлой, он подмешивает белый в
+         системные элементы: подложку окна, полосу прокрутки, отскок при
+         перелистывании до края. Отсюда белые полоски и уголки. */
+      color-scheme: light;
       --primary: #e11d48;
       --primary-dark: #be123c;
       --primary-light: #ffe4e6;
@@ -65,6 +69,7 @@
     }
 
     [data-theme="dark"] {
+      color-scheme: dark;
       --bg: #1c1917;
       --card: #292524;
       --text: #fafaf9;
@@ -77,6 +82,7 @@
     /* Чёрная тема: глубокий чёрный фон, белый текст, минимум украшений.
        Карточки отличаются от фона еле заметно — как в Down Dog. */
     [data-theme="black"] {
+      color-scheme: dark;
       --bg: #000000;
       --card: #0e0e0e;
       --text: #ffffff;
@@ -177,8 +183,12 @@
        белая полоса и белые уголки. Красим и его тоже. */
     html {
       background: var(--bg);
+      /* Отскок при перелистывании до края открывает подложку под страницей —
+         именно там и мелькало белое. Отключаем везде. */
       overscroll-behavior: none;
+      -webkit-overflow-scrolling: auto;
     }
+    html, body { background-color: var(--bg); }
 
     /* WebView иногда «съедает» тап из-за задержки на двойное нажатие и
        из-за выделения текста на кнопках. Оба поведения отключаем. */
@@ -535,13 +545,15 @@
     .day-btn.today:not(.active) { box-shadow: 0 0 0 1.5px var(--primary); }
 
     .time-grid {
-      border: 1px solid var(--border); border-radius: 14px;
+      border: 1px solid var(--border); border-radius: 16px;
       background: var(--card);
       /* Колонка часов и разделители рисовались поверх скруглённого угла —
          получался обрубленный уголок. Обрезаем всё по форме сетки. */
       overflow: hidden;
       position: relative;
       isolation: isolate;
+      /* поля, чтобы карточки не упирались в скруглённый край */
+      padding: 10px 0;
     }
     .time-slot {
       display: flex; height: 96px;
@@ -549,7 +561,8 @@
       pointer-events: none;
       position: relative;
     }
-    .time-slot:last-child { border-bottom: none; }
+    .time-slot:first-of-type { border-top: none; }
+    .time-slot:last-of-type { border-bottom: none; }
     .time-slot::after {
       content: '';
       position: absolute;
@@ -567,7 +580,10 @@
 
     .time-events {
       position: absolute;
-      left: 42px; right: 0; top: 0; bottom: 0;
+      /* Абсолютные элементы отсчитываются от внутреннего края рамки, а не от
+         отступа. Повторяем поля сетки, иначе карточки съезжают вверх и снова
+         упираются в скруглённый край. */
+      left: 42px; right: 0; top: 10px; bottom: 10px;
       pointer-events: none;
     }
     .time-class {
@@ -1741,7 +1757,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-11 · 19',
+    BUILD: '2026-08-11 · 20',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -4043,6 +4059,18 @@
           : (isDarkish ? Domain.shadeColor(s.primary, -55) : Domain.shadeColor(s.primary, 88)));
       var themeMeta = document.querySelector('meta[name="theme-color"]');
       if (themeMeta && themeName === 'black') themeMeta.content = '#000000';
+
+      /* Подложка самого окна приложения живёт в нативном коде и по умолчанию
+         светлая — она и просвечивала белым по краям экрана. Передаём ей
+         текущий цвет фона. */
+      var bgByTheme = { light: '#fdf2f4', dark: '#1c1917', black: '#000000' };
+      var bg = bgByTheme[themeName] || '#fdf2f4';
+      document.documentElement.style.backgroundColor = bg;
+      // applyTheme может вызваться до того, как body готов
+      if (document.body && document.body.style) document.body.style.backgroundColor = bg;
+      if (window.AndroidBridge && typeof window.AndroidBridge.setAppBackground === 'function') {
+        try { window.AndroidBridge.setAppBackground(bg, themeName !== 'light'); } catch (e) {}
+      }
       var meta = document.querySelector('meta[name="theme-color"]');
       if (meta) meta.content = s.primary;
       this.$('appTitle').textContent = s.calendarName ? '💃 ' + s.calendarName : '💃 Танцевальный тренер';
@@ -4166,9 +4194,15 @@
       if (endH > 23) endH = 23;
       var dayStartMin = startH * 60;
       var gap = 3;
-      var gridH = (endH - startH + 1) * hourH;
+      /* Поля сверху и снизу. Без них первая и последняя карточки упираются
+         прямо в скруглённый край сетки: углы карточки и углы рамки спорят
+         друг с другом, и место стыка выглядит обрубленным. */
+      var pad = 10;
+      var gridH = (endH - startH + 1) * hourH + pad * 2;
 
-      var grid = '<div class="time-grid" style="height:' + gridH + 'px;overflow:visible;">';
+      // overflow задаём в стилях, а не здесь: инлайновое значение перебивало
+      // правило и ломало скругление углов
+      var grid = '<div class="time-grid" style="height:' + gridH + 'px;">';
       for (var h = startH; h <= endH; h++) {
         grid += '<div class="time-slot"><div class="time-label">' + String(h).padStart(2, '0') + ':00</div><div class="time-content"></div></div>';
       }
