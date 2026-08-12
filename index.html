@@ -343,6 +343,19 @@
       box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent);
     }
     /* Телефон введён не полностью (нужно 11 цифр) */
+    /* Тумблер «Телефон / Email» на входе */
+    .seg-toggle {
+      display: flex; gap: 4px; padding: 4px;
+      background: var(--bg); border: 1px solid var(--border); border-radius: 12px;
+    }
+    .seg-btn {
+      flex: 1; padding: 9px 8px; border: none; border-radius: 9px;
+      background: none; color: var(--text-muted);
+      font-size: 0.85rem; font-weight: 600; cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .seg-btn.active { background: var(--card); color: var(--text); box-shadow: var(--shadow); }
+
     /* Поле телефона: кнопка страны + только цифры */
     .phone-field { display: flex; gap: 8px; align-items: stretch; }
     .phone-cc {
@@ -1429,9 +1442,23 @@
 
       <div id="authPanelRegister">
         <div class="form-group"><label>Имя *</label><input type="text" id="regName" placeholder="Ваше имя" autocomplete="name"></div>
-        <div class="form-group"><label>Телефон или email *</label><input type="text" id="regLogin" placeholder="+7… или email" autocomplete="username"></div>
+        <div class="form-group">
+          <label>Как входить *</label>
+          <div class="seg-toggle" data-auth-panel="reg">
+            <button type="button" class="seg-btn active" data-action="auth-mode" data-panel="reg" data-mode="phone">Телефон</button>
+            <button type="button" class="seg-btn" data-action="auth-mode" data-panel="reg" data-mode="email">Email</button>
+          </div>
+        </div>
+        <div class="form-group" data-auth-field="reg-phone">
+          <label>Телефон *</label>
+          <input type="tel" id="regPhone" data-intl-phone autocomplete="username">
+        </div>
+        <div class="form-group hidden" data-auth-field="reg-email">
+          <label>Email *</label>
+          <input type="email" id="regLogin" placeholder="you@example.com" autocomplete="username">
+        </div>
         <div class="form-group"><label>Пароль *</label><input type="password" id="regPass" placeholder="Минимум 8 символов" autocomplete="new-password">
-          <p class="text-sm text-muted" style="margin-top:6px;font-size:0.7rem;">Номер можно вводить как +7… или 8… — это один и тот же аккаунт.</p></div>
+          <p class="text-sm text-muted" style="margin-top:6px;font-size:0.7rem;">Телефон и почта — разные аккаунты. Войти можно тем способом, которым регистрировались.</p></div>
         <button type="button" class="btn btn-primary btn-block" data-action="register-local">Зарегистрироваться</button>
         <div class="auth-divider"><span>или</span></div>
         <button type="button" class="btn btn-yandex btn-block" data-action="yandex-login">
@@ -1441,7 +1468,21 @@
       </div>
 
       <div id="authPanelLogin" class="hidden">
-        <div class="form-group"><label>Телефон или email</label><input type="text" id="loginLogin" placeholder="+7… или email" autocomplete="username"></div>
+        <div class="form-group">
+          <label>Как входить</label>
+          <div class="seg-toggle" data-auth-panel="login">
+            <button type="button" class="seg-btn active" data-action="auth-mode" data-panel="login" data-mode="phone">Телефон</button>
+            <button type="button" class="seg-btn" data-action="auth-mode" data-panel="login" data-mode="email">Email</button>
+          </div>
+        </div>
+        <div class="form-group" data-auth-field="login-phone">
+          <label>Телефон</label>
+          <input type="tel" id="loginPhone" data-intl-phone autocomplete="username">
+        </div>
+        <div class="form-group hidden" data-auth-field="login-email">
+          <label>Email</label>
+          <input type="email" id="loginLogin" placeholder="you@example.com" autocomplete="username">
+        </div>
         <div class="form-group"><label>Пароль</label><input type="password" id="loginPass" placeholder="Пароль" autocomplete="current-password"></div>
         <button type="button" class="btn btn-primary btn-block" data-action="login-local">Войти</button>
         <div class="auth-divider"><span>или</span></div>
@@ -1885,7 +1926,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-12 · 28',
+    BUILD: '2026-08-12 · 29',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -2598,12 +2639,19 @@
     isEmail(login) {
       return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(this.normalizeLogin(login));
     },
-    /** Только цифры телефона, приведённые к 11 знакам с 7 в начале */
+    /**
+     * Только цифры телефона, вместе с кодом страны.
+     * Российские привычки сохраняем: «8 999…» и «999…» без кода — это +7.
+     * Остальные страны приходят уже с кодом, его не трогаем.
+     */
     phoneDigits(login) {
       var d = String(login || '').replace(/\D/g, '');
       if (!d) return '';
-      if (d.charAt(0) === '8') d = '7' + d.slice(1);
-      if (d.length === 10) d = '7' + d;
+      if (d.length === 11 && d.charAt(0) === '8') d = '7' + d.slice(1);
+      // Российский номер без кода страны начинается с девятки. Проверка на
+      // девятку обязательна: иначе недобранный «+7 999 123-45-6» тоже имел
+      // бы десять цифр и молча превращался в чужой номер 7 7999123456.
+      if (d.length === 10 && d.charAt(0) === '9') d = '7' + d;
       return d;
     },
     /**
@@ -2614,10 +2662,11 @@
       if (!login) return '';
       if (this.isEmail(login)) return this.normalizeLogin(login);
       var d = this.phoneDigits(login);
-      if (d.length !== 11) return String(login);
-      return '+7 (' + d.slice(1, 4) + ') ' + d.slice(4, 7) + '-' + d.slice(7, 9) + '-' + d.slice(9, 11);
+      if (!d) return String(login);
+      var parsed = Domain.splitPhone('+' + d);
+      return Domain.composePhone(parsed.dial, parsed.national) || String(login);
     },
-    /** Проверка логина при регистрации: либо email, либо телефон из 11 цифр */
+    /** Проверка логина при регистрации: либо email, либо телефон с кодом страны */
     validateLogin(login) {
       var raw = this.normalizeLogin(login);
       if (!raw) return { ok: false, error: 'Укажите телефон или email' };
@@ -2626,8 +2675,13 @@
         return { ok: false, error: 'Введите номер телефона или корректный email' };
       }
       var d = this.phoneDigits(raw);
-      if (d.length !== 11 || d.charAt(0) !== '7') {
-        return { ok: false, error: 'Номер телефона должен быть из 11 цифр: +7… или 8…' };
+      if (!Domain.isValidPhone(d)) {
+        return {
+          ok: false,
+          error: d.charAt(0) === '7'
+            ? 'Российский номер — это 11 цифр вместе с кодом страны'
+            : 'Проверьте номер: не хватает цифр'
+        };
       }
       return { ok: true, login: d, kind: 'phone' };
     },
@@ -6298,8 +6352,50 @@
         UI.closeModal('ccSheet');
       });
 
-      Array.prototype.forEach.call(document.querySelectorAll('input[type="tel"]'), enhance);
+      // Виджет ставится только на поля с пометкой data-intl-phone.
+      // Карточки клиентов остаются с прежней простой маской +7.
+      Array.prototype.forEach.call(document.querySelectorAll('[data-intl-phone]'), enhance);
     })();
+
+    /* —— Прежняя маска для обычных полей телефона ——
+       Карточка клиента, участник клуба, профиль: ввод только цифр,
+       формат +7 999 123-45-67, код страны подставляется сам. */
+    Array.prototype.forEach.call(document.querySelectorAll('input[type="tel"]'), function (el) {
+      if (el.dataset.intlPhone !== undefined) return;
+      el.setAttribute('inputmode', 'tel');
+      el.setAttribute('maxlength', '18');
+      el.setAttribute('autocomplete', 'tel');
+      if (!el.placeholder || el.placeholder === '+7 ...') el.placeholder = '+7 999 123-45-67';
+    });
+    document.addEventListener('focusin', function (e) {
+      var el = e.target;
+      if (!el || el.tagName !== 'INPUT' || el.type !== 'tel') return;
+      if (el.dataset.intlPhone !== undefined) return;
+      if (!el.value) {
+        el.value = '+7 ';
+        try { el.setSelectionRange(el.value.length, el.value.length); } catch (err) {}
+      }
+    });
+    document.addEventListener('focusout', function (e) {
+      var el = e.target;
+      if (!el || el.tagName !== 'INPUT' || el.type !== 'tel') return;
+      if (el.dataset.intlPhone !== undefined) return;
+      if (Domain.normalizePhone(el.value).length <= 1) {
+        el.value = '';
+        el.classList.remove('phone-incomplete');
+      }
+    });
+    document.addEventListener('input', function (e) {
+      var el = e.target;
+      if (!el || el.tagName !== 'INPUT' || el.type !== 'tel') return;
+      if (el.dataset.intlPhone !== undefined) return;
+      var formatted = Domain.formatPhoneInput(el.value);
+      if (el.value !== formatted) {
+        el.value = formatted;
+        try { el.setSelectionRange(formatted.length, formatted.length); } catch (err) {}
+      }
+      el.classList.toggle('phone-incomplete', !Domain.isValidPhone(el.value));
+    }, true);
 
     document.body.addEventListener('click', function (e) {
       var el = e.target.closest('[data-action]');
@@ -6477,9 +6573,12 @@
         case 'toggle-pay':
           Controllers.togglePayment(el.dataset.class, el.dataset.client, el.checked);
           break;
+        case 'auth-mode':
+          setAuthMode(el.dataset.panel, el.dataset.mode);
+          break;
         case 'register-local': {
           (async function () {
-            var loginRaw = document.getElementById('regLogin').value;
+            var loginRaw = authLoginValue('reg');
             var r = await Auth.registerLocal(
               document.getElementById('regName').value,
               loginRaw,
@@ -6490,8 +6589,7 @@
               // Аккаунт уже есть — сразу открываем вход с подставленным логином
               if (r.exists) {
                 showAuthGate('login');
-                var li = document.getElementById('loginLogin');
-                if (li) li.value = r.login || loginRaw;
+                authLoginFill('login', r.login || loginRaw);
                 var lp = document.getElementById('loginPass');
                 if (lp) { lp.value = ''; lp.focus(); }
               }
@@ -6504,7 +6602,7 @@
         }
         case 'login-local': {
           (async function () {
-            var loginRaw2 = document.getElementById('loginLogin').value;
+            var loginRaw2 = authLoginValue('login');
             var lr = await Auth.loginLocal(
               loginRaw2,
               document.getElementById('loginPass').value
@@ -6514,8 +6612,7 @@
               // Совсем нет аккаунтов — отправляем регистрироваться
               if (lr.notFound && Auth.accountsCount() === 0) {
                 showAuthGate('register');
-                var ri = document.getElementById('regLogin');
-                if (ri) ri.value = loginRaw2;
+                authLoginFill('reg', loginRaw2);
               }
               return;
             }
@@ -6805,6 +6902,40 @@
     UI.applyTheme();
     UI.renderSchedule();
     UI.renderClients();
+  }
+
+  /* —— Тумблер «Телефон / Email» на входе и регистрации ——
+     Панель имеет два поля: телефон с выбором страны и почту.
+     Наружу отдаётся значение того, которое сейчас открыто. */
+  function setAuthMode(panel, mode) {
+    document.querySelectorAll('[data-action="auth-mode"][data-panel="' + panel + '"]')
+      .forEach(function (b) { b.classList.toggle('active', b.dataset.mode === mode); });
+    var phoneBox = document.querySelector('[data-auth-field="' + panel + '-phone"]');
+    var emailBox = document.querySelector('[data-auth-field="' + panel + '-email"]');
+    if (phoneBox) phoneBox.classList.toggle('hidden', mode !== 'phone');
+    if (emailBox) emailBox.classList.toggle('hidden', mode !== 'email');
+    var focusOn = document.getElementById(panel + (mode === 'phone' ? 'Phone' : 'Login'));
+    if (focusOn) setTimeout(function () { focusOn.focus(); }, 30);
+  }
+
+  function authMode(panel) {
+    var btn = document.querySelector('[data-action="auth-mode"][data-panel="' + panel + '"].active');
+    return btn ? btn.dataset.mode : 'phone';
+  }
+
+  /** Что человек ввёл: номер целиком или почта */
+  function authLoginValue(panel) {
+    var id = panel + (authMode(panel) === 'phone' ? 'Phone' : 'Login');
+    var el = document.getElementById(id);
+    return el ? el.value : '';
+  }
+
+  /** Подставить логин и сам переключиться в нужный режим */
+  function authLoginFill(panel, value) {
+    var isEmail = Auth.isEmail(value);
+    setAuthMode(panel, isEmail ? 'email' : 'phone');
+    var el = document.getElementById(panel + (isEmail ? 'Login' : 'Phone'));
+    if (el) el.value = value || '';
   }
 
   function showAuthGate(mode) {
