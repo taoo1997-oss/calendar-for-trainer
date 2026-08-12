@@ -793,6 +793,9 @@
        уже открытой модалки. У всех окон был одинаковый z-index, и список
        уезжал ПОД карточку. Поднимаем его выше остальных. */
     #contactsPickModal { z-index: 320; }
+    /* Экран входа лежит на z-index 500, поэтому выбор страны должен быть выше:
+       иначе список честно открывается, но остаётся за экраном входа. */
+    #ccSheet { z-index: 650; }
     #contactsPickModal .modal { max-height: 86vh; }
     .modal-overlay.show { display: flex; }
     .modal {
@@ -1926,7 +1929,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-12 · 29',
+    BUILD: '2026-08-12 · 30',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -6336,8 +6339,13 @@
         var search = UI.$('ccSearch');
         if (search) search.value = '';
         renderList('');
+        // Клавиатуру не трогаем: если сразу поставить курсор в поиск,
+        // на телефоне экран дёргается — закрывается цифровая клавиатура
+        // и тут же открывается буквенная.
+        if (document.activeElement && document.activeElement.blur) {
+          document.activeElement.blur();
+        }
         UI.openModal('ccSheet');
-        if (search) setTimeout(function () { search.focus(); }, 50);
       }
 
       var searchEl = UI.$('ccSearch');
@@ -6914,8 +6922,12 @@
     var emailBox = document.querySelector('[data-auth-field="' + panel + '-email"]');
     if (phoneBox) phoneBox.classList.toggle('hidden', mode !== 'phone');
     if (emailBox) emailBox.classList.toggle('hidden', mode !== 'email');
-    var focusOn = document.getElementById(panel + (mode === 'phone' ? 'Phone' : 'Login'));
-    if (focusOn) setTimeout(function () { focusOn.focus(); }, 30);
+    /* Курсор в поле специально НЕ ставим. Автофокус заставлял телефон
+       менять клавиатуру с цифровой на буквенную прямо во время переключения,
+       и вся карточка прыгала. Пусть человек сам нажмёт на поле. */
+    if (document.activeElement && document.activeElement.blur) {
+      document.activeElement.blur();
+    }
   }
 
   function authMode(panel) {
