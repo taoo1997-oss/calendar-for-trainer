@@ -851,18 +851,28 @@
     .detail-row + .detail-row { border-top: 1px solid var(--border); }
     .detail-row.tappable { cursor: pointer; border-radius: 12px; }
     .detail-row.tappable:active { background: var(--bg); }
+    /* Пояснение под клиентом: почему абонемент не списался */
+    .abon-why {
+      font-size: 0.68rem; color: var(--text-muted);
+      margin: -6px 0 10px; padding: 0 4px 0 4px; line-height: 1.35;
+    }
     .detail-avatar {
       flex: 0 0 auto; width: 38px; height: 38px; border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
       background: var(--primary-light); color: var(--primary);
       font-weight: 700; font-size: 0.95rem;
     }
-    .detail-info { flex: 1; min-width: 0; }
+    /* Имя и подпись — строго друг под другом.
+       Раньше это были inline-элементы, и «Лада Солохина3 оплаты» слипалось. */
+    .detail-info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
     .detail-name {
-      font-size: 0.92rem; font-weight: 600; color: var(--text);
+      display: block; font-size: 0.92rem; font-weight: 600; color: var(--text);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
-    .detail-meta { font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; }
+    .detail-meta {
+      display: block; font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
     .detail-sum {
       flex: 0 0 auto; font-size: 0.95rem; font-weight: 700; color: var(--text);
       white-space: nowrap;
@@ -1604,7 +1614,7 @@
         <div class="form-group"><label>Телефон</label><input type="tel" id="clientPhone" placeholder="+7 999 123-45-67"></div>
         <div class="form-group"><label>Заметки</label><textarea id="clientNotes" rows="3" placeholder="Уровень, особенности..."></textarea></div>
         <div id="abonementPanel" class="abon-block hidden">
-          <h4>Абонемент (для «Группа»)</h4>
+          <h4>Абонемент</h4>
           <div id="abonementInfo"></div>
           <div class="form-group hidden" id="abonementStartWrap" style="margin:12px 0 0;">
             <label>Действует с</label>
@@ -1622,7 +1632,7 @@
             <button type="button" class="chip" data-action="abon-add" data-sessions="8">+ 8</button>
             <button type="button" class="chip" data-action="abon-clear" style="color:#dc2626;">Сбросить</button>
           </div>
-          <p class="text-sm text-muted" style="margin-top:8px;font-size:0.72rem;">Списывается автоматически на занятиях с включённой опцией «Групповое занятие»</p>
+          <p class="text-sm text-muted" style="margin-top:8px;font-size:0.72rem;">Списывается автоматически на занятиях с включённой опцией «Списывать абонемент»</p>
         </div>
         <div class="flex gap-2 mt-3">
           <button type="button" class="btn btn-secondary btn-block" data-close="clientModal">Отмена</button>
@@ -1698,9 +1708,9 @@
         <div class="form-group" style="margin-bottom:12px;">
           <label class="checkbox-item" style="margin:0;cursor:pointer;">
             <input type="checkbox" id="classIsGroup" style="width:20px;height:20px;accent-color:var(--primary);">
-            <span style="font-weight:500;font-size:0.875rem;">Групповое занятие (списывать абонемент)</span>
+            <span style="font-weight:500;font-size:0.875rem;">Списывать абонемент</span>
           </label>
-          <p class="text-sm text-muted" style="margin-top:6px;font-size:0.72rem;padding-left:32px;">Если включено — у участников с абонементом автоматически списывается 1 занятие и ставится «Оплатил».</p>
+          <p class="text-sm text-muted" style="margin-top:6px;font-size:0.72rem;padding-left:32px;">Годится и для группы, и для индивидуального. Если включено — у участников с действующим абонементом списывается 1 занятие и ставится «Оплатил».</p>
           <div class="price-box" id="classPriceBox">
             <label id="classPriceLabel">Стоимость занятия, ₽</label>
             <input type="number" id="classPrice" min="0" step="50" inputmode="numeric" placeholder="Введите сумму">
@@ -1840,7 +1850,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-12 · 21',
+    BUILD: '2026-08-12 · 23',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -3222,6 +3232,24 @@
       var start = client.abonement.startDate;
       if (!start) return true; // старые данные без даты — ведут себя как раньше
       return String(cls.date || '') >= String(start);
+    },
+    /**
+     * Почему абонемент клиента не списался за это занятие.
+     * Возвращает короткое пояснение или null, если всё в порядке
+     * (списалось, либо абонемента нет и говорить не о чем).
+     */
+    abonementSkipReason(client, cls) {
+      if (!client || !cls) return null;
+      var ab = client.abonement;
+      if (!ab || !(ab.total > 0)) return null;
+      if (ab.debits && ab.debits[cls.id]) return null; // списано, всё хорошо
+      if (!Domain.isGroupClass(cls)) return 'на занятии выключено «Списывать абонемент»';
+      if (!Services.abonementCoversClass(client, cls)) {
+        return 'абонемент действует с ' + Domain.formatDisplayDate(ab.startDate);
+      }
+      if (cls.payments && cls.payments[client.id]) return 'оплата отмечена вручную — абонемент не тронут';
+      if ((ab.remaining || 0) <= 0) return 'занятия на абонементе закончились';
+      return null;
     },
     /**
      * Разовая миграция старых абонементов (без поля startDate).
@@ -4861,11 +4889,14 @@
             var lvl = Domain.abonementLevel(rem, tot);
             abMark = ' <span class="abon-badge ' + (lvl === 'ok' ? '' : lvl) + '">' + rem + '/' + tot + '</span>';
           }
+          /* Если абонемент есть, но за это занятие не списался — прямо говорим почему */
+          var why = Services.abonementSkipReason(c, cls);
           return '<div class="checkbox-item"><label for="pay_' + c.id + '" style="color:' + (c.paid ? '#059669' : 'inherit') +
             ';font-weight:' + (c.paid ? 600 : 500) + ';">' + Domain.escapeHtml(c.name) + abMark + '</label>' +
             '<span class="paid-badge ' + (c.paid ? 'yes' : 'no') + '">' + (c.paid ? 'Оплатил' : 'Не оплатил') + '</span>' +
             '<input type="checkbox" id="pay_' + c.id + '" ' + (c.paid ? 'checked' : '') +
-            ' data-action="toggle-pay" data-class="' + cls.id + '" data-client="' + c.id + '"></div>';
+            ' data-action="toggle-pay" data-class="' + cls.id + '" data-client="' + c.id + '"></div>' +
+            (why ? '<div class="abon-why">🎟 ' + Domain.escapeHtml(why) + '</div>' : '');
         }).join('');
       }
       this.$('classDetailContent').innerHTML = html;
