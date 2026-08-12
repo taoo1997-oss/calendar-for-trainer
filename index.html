@@ -343,6 +343,28 @@
       box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent);
     }
     /* Телефон введён не полностью (нужно 11 цифр) */
+    /* Поле телефона: кнопка страны + только цифры */
+    .phone-field { display: flex; gap: 8px; align-items: stretch; }
+    .phone-cc {
+      display: flex; align-items: center; gap: 6px;
+      padding: 0 10px; flex: 0 0 auto; white-space: nowrap;
+      background: var(--card); color: var(--text);
+      border: 1px solid var(--border); border-radius: 12px;
+      font-size: 0.95rem; font-weight: 600; cursor: pointer;
+    }
+    .phone-flag { font-size: 1.15rem; line-height: 1; }
+    .phone-caret { color: var(--text-muted); font-size: 0.7rem; }
+    .phone-field input.phone-national { flex: 1 1 auto; min-width: 0; }
+    .cc-list { max-height: 55vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+    .cc-item {
+      display: flex; align-items: center; gap: 10px; width: 100%;
+      padding: 11px 8px; background: none; border: none;
+      border-bottom: 1px solid var(--border);
+      color: var(--text); font-size: 0.92rem; text-align: left; cursor: pointer;
+    }
+    .cc-flag { font-size: 1.3rem; line-height: 1; }
+    .cc-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cc-dial { color: var(--text-muted); font-variant-numeric: tabular-nums; }
     .form-group input.phone-incomplete {
       border-color: #dc2626;
       box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
@@ -1837,6 +1859,19 @@
 
   </div><!-- /appShell -->
 
+  <div class="modal-overlay" id="ccSheet">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">Код страны</div>
+        <button type="button" class="modal-close" data-close="ccSheet">×</button>
+      </div>
+      <div class="form-group">
+        <input type="text" id="ccSearch" placeholder="Поиск: страна или код" autocomplete="off">
+      </div>
+      <div id="ccList" class="cc-list"></div>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
 
   <script>
@@ -1850,7 +1885,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-12 · 27',
+    BUILD: '2026-08-12 · 28',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -2043,6 +2078,306 @@
       return paidCount === ids.length ? 'paid-all' : 'has-unpaid';
     },
     normalizePhone(phone) { return (phone || '').replace(/\D/g, ''); },
+    /* —— Страны и телефонные коды ——
+       c — код страны (ISO), d — телефонный код, f — флаг, n — название.
+       Первыми идут страны, где приложением пользуются сейчас. */
+    COUNTRIES: [
+      { c: 'RU',  d: '7',    f: '🇷🇺', n: 'Россия' },
+      { c: 'BY',  d: '375',  f: '🇧🇾', n: 'Беларусь' },
+      { c: 'KZ',  d: '7',    f: '🇰🇿', n: 'Казахстан' },
+      { c: 'UA',  d: '380',  f: '🇺🇦', n: 'Украина' },
+      { c: 'AM',  d: '374',  f: '🇦🇲', n: 'Армения' },
+      { c: 'GE',  d: '995',  f: '🇬🇪', n: 'Грузия' },
+      { c: 'AZ',  d: '994',  f: '🇦🇿', n: 'Азербайджан' },
+      { c: 'UZ',  d: '998',  f: '🇺🇿', n: 'Узбекистан' },
+      { c: 'KG',  d: '996',  f: '🇰🇬', n: 'Киргизия' },
+      { c: 'MD',  d: '373',  f: '🇲🇩', n: 'Молдова' },
+      { c: 'AU',  d: '61',   f: '🇦🇺', n: 'Австралия' },
+      { c: 'AT',  d: '43',   f: '🇦🇹', n: 'Австрия' },
+      { c: 'AL',  d: '355',  f: '🇦🇱', n: 'Албания' },
+      { c: 'DZ',  d: '213',  f: '🇩🇿', n: 'Алжир' },
+      { c: 'AS',  d: '1',    f: '🇦🇸', n: 'Американское Самоа' },
+      { c: 'AI',  d: '1',    f: '🇦🇮', n: 'Ангилья' },
+      { c: 'AO',  d: '244',  f: '🇦🇴', n: 'Ангола' },
+      { c: 'AD',  d: '376',  f: '🇦🇩', n: 'Андорра' },
+      { c: 'AG',  d: '1',    f: '🇦🇬', n: 'Антигуа и Барбуда' },
+      { c: 'AR',  d: '54',   f: '🇦🇷', n: 'Аргентина' },
+      { c: 'AW',  d: '297',  f: '🇦🇼', n: 'Аруба' },
+      { c: 'AF',  d: '93',   f: '🇦🇫', n: 'Афганистан' },
+      { c: 'BS',  d: '1',    f: '🇧🇸', n: 'Багамы' },
+      { c: 'BD',  d: '880',  f: '🇧🇩', n: 'Бангладеш' },
+      { c: 'BB',  d: '1',    f: '🇧🇧', n: 'Барбадос' },
+      { c: 'BH',  d: '973',  f: '🇧🇭', n: 'Бахрейн' },
+      { c: 'BZ',  d: '501',  f: '🇧🇿', n: 'Белиз' },
+      { c: 'BE',  d: '32',   f: '🇧🇪', n: 'Бельгия' },
+      { c: 'BJ',  d: '229',  f: '🇧🇯', n: 'Бенин' },
+      { c: 'BM',  d: '1',    f: '🇧🇲', n: 'Бермудские о-ва' },
+      { c: 'BG',  d: '359',  f: '🇧🇬', n: 'Болгария' },
+      { c: 'BO',  d: '591',  f: '🇧🇴', n: 'Боливия' },
+      { c: 'BA',  d: '387',  f: '🇧🇦', n: 'Босния и Герцеговина' },
+      { c: 'BW',  d: '267',  f: '🇧🇼', n: 'Ботсвана' },
+      { c: 'BR',  d: '55',   f: '🇧🇷', n: 'Бразилия' },
+      { c: 'BN',  d: '673',  f: '🇧🇳', n: 'Бруней' },
+      { c: 'BF',  d: '226',  f: '🇧🇫', n: 'Буркина-Фасо' },
+      { c: 'BI',  d: '257',  f: '🇧🇮', n: 'Бурунди' },
+      { c: 'BT',  d: '975',  f: '🇧🇹', n: 'Бутан' },
+      { c: 'VU',  d: '678',  f: '🇻🇺', n: 'Вануату' },
+      { c: 'VA',  d: '39',   f: '🇻🇦', n: 'Ватикан' },
+      { c: 'GB',  d: '44',   f: '🇬🇧', n: 'Великобритания' },
+      { c: 'HU',  d: '36',   f: '🇭🇺', n: 'Венгрия' },
+      { c: 'VE',  d: '58',   f: '🇻🇪', n: 'Венесуэла' },
+      { c: 'VG',  d: '1',    f: '🇻🇬', n: 'Виргинские о-ва (Великобритания)' },
+      { c: 'VI',  d: '1',    f: '🇻🇮', n: 'Виргинские о-ва (США)' },
+      { c: 'TL',  d: '670',  f: '🇹🇱', n: 'Восточный Тимор' },
+      { c: 'VN',  d: '84',   f: '🇻🇳', n: 'Вьетнам' },
+      { c: 'GA',  d: '241',  f: '🇬🇦', n: 'Габон' },
+      { c: 'HT',  d: '509',  f: '🇭🇹', n: 'Гаити' },
+      { c: 'GY',  d: '592',  f: '🇬🇾', n: 'Гайана' },
+      { c: 'GM',  d: '220',  f: '🇬🇲', n: 'Гамбия' },
+      { c: 'GH',  d: '233',  f: '🇬🇭', n: 'Гана' },
+      { c: 'GT',  d: '502',  f: '🇬🇹', n: 'Гватемала' },
+      { c: 'GN',  d: '224',  f: '🇬🇳', n: 'Гвинея' },
+      { c: 'GW',  d: '245',  f: '🇬🇼', n: 'Гвинея-Бисау' },
+      { c: 'DE',  d: '49',   f: '🇩🇪', n: 'Германия' },
+      { c: 'GG',  d: '44',   f: '🇬🇬', n: 'Гернси' },
+      { c: 'GI',  d: '350',  f: '🇬🇮', n: 'Гибралтар' },
+      { c: 'HN',  d: '504',  f: '🇭🇳', n: 'Гондурас' },
+      { c: 'HK',  d: '852',  f: '🇭🇰', n: 'Гонконг (САР)' },
+      { c: 'GD',  d: '1',    f: '🇬🇩', n: 'Гренада' },
+      { c: 'GL',  d: '299',  f: '🇬🇱', n: 'Гренландия' },
+      { c: 'GR',  d: '30',   f: '🇬🇷', n: 'Греция' },
+      { c: 'GU',  d: '1',    f: '🇬🇺', n: 'Гуам' },
+      { c: 'DK',  d: '45',   f: '🇩🇰', n: 'Дания' },
+      { c: 'JE',  d: '44',   f: '🇯🇪', n: 'Джерси' },
+      { c: 'DJ',  d: '253',  f: '🇩🇯', n: 'Джибути' },
+      { c: 'DM',  d: '1',    f: '🇩🇲', n: 'Доминика' },
+      { c: 'DO',  d: '1',    f: '🇩🇴', n: 'Доминиканская Республика' },
+      { c: 'EG',  d: '20',   f: '🇪🇬', n: 'Египет' },
+      { c: 'ZM',  d: '260',  f: '🇿🇲', n: 'Замбия' },
+      { c: 'EH',  d: '212',  f: '🇪🇭', n: 'Западная Сахара' },
+      { c: 'ZW',  d: '263',  f: '🇿🇼', n: 'Зимбабве' },
+      { c: 'IL',  d: '972',  f: '🇮🇱', n: 'Израиль' },
+      { c: 'IN',  d: '91',   f: '🇮🇳', n: 'Индия' },
+      { c: 'ID',  d: '62',   f: '🇮🇩', n: 'Индонезия' },
+      { c: 'JO',  d: '962',  f: '🇯🇴', n: 'Иордания' },
+      { c: 'IQ',  d: '964',  f: '🇮🇶', n: 'Ирак' },
+      { c: 'IR',  d: '98',   f: '🇮🇷', n: 'Иран' },
+      { c: 'IE',  d: '353',  f: '🇮🇪', n: 'Ирландия' },
+      { c: 'IS',  d: '354',  f: '🇮🇸', n: 'Исландия' },
+      { c: 'ES',  d: '34',   f: '🇪🇸', n: 'Испания' },
+      { c: 'IT',  d: '39',   f: '🇮🇹', n: 'Италия' },
+      { c: 'YE',  d: '967',  f: '🇾🇪', n: 'Йемен' },
+      { c: 'KP',  d: '850',  f: '🇰🇵', n: 'КНДР' },
+      { c: 'CV',  d: '238',  f: '🇨🇻', n: 'Кабо-Верде' },
+      { c: 'KH',  d: '855',  f: '🇰🇭', n: 'Камбоджа' },
+      { c: 'CM',  d: '237',  f: '🇨🇲', n: 'Камерун' },
+      { c: 'CA',  d: '1',    f: '🇨🇦', n: 'Канада' },
+      { c: 'QA',  d: '974',  f: '🇶🇦', n: 'Катар' },
+      { c: 'KE',  d: '254',  f: '🇰🇪', n: 'Кения' },
+      { c: 'CY',  d: '357',  f: '🇨🇾', n: 'Кипр' },
+      { c: 'KI',  d: '686',  f: '🇰🇮', n: 'Кирибати' },
+      { c: 'CN',  d: '86',   f: '🇨🇳', n: 'Китай' },
+      { c: 'CO',  d: '57',   f: '🇨🇴', n: 'Колумбия' },
+      { c: 'KM',  d: '269',  f: '🇰🇲', n: 'Коморы' },
+      { c: 'CG',  d: '242',  f: '🇨🇬', n: 'Конго - Браззавиль' },
+      { c: 'CD',  d: '243',  f: '🇨🇩', n: 'Конго - Киншаса' },
+      { c: 'XK',  d: '383',  f: '🇽🇰', n: 'Косово' },
+      { c: 'CR',  d: '506',  f: '🇨🇷', n: 'Коста-Рика' },
+      { c: 'CI',  d: '225',  f: '🇨🇮', n: 'Кот-д’Ивуар' },
+      { c: 'CU',  d: '53',   f: '🇨🇺', n: 'Куба' },
+      { c: 'KW',  d: '965',  f: '🇰🇼', n: 'Кувейт' },
+      { c: 'CW',  d: '599',  f: '🇨🇼', n: 'Кюрасао' },
+      { c: 'LA',  d: '856',  f: '🇱🇦', n: 'Лаос' },
+      { c: 'LV',  d: '371',  f: '🇱🇻', n: 'Латвия' },
+      { c: 'LS',  d: '266',  f: '🇱🇸', n: 'Лесото' },
+      { c: 'LR',  d: '231',  f: '🇱🇷', n: 'Либерия' },
+      { c: 'LB',  d: '961',  f: '🇱🇧', n: 'Ливан' },
+      { c: 'LY',  d: '218',  f: '🇱🇾', n: 'Ливия' },
+      { c: 'LT',  d: '370',  f: '🇱🇹', n: 'Литва' },
+      { c: 'LI',  d: '423',  f: '🇱🇮', n: 'Лихтенштейн' },
+      { c: 'LU',  d: '352',  f: '🇱🇺', n: 'Люксембург' },
+      { c: 'MU',  d: '230',  f: '🇲🇺', n: 'Маврикий' },
+      { c: 'MR',  d: '222',  f: '🇲🇷', n: 'Мавритания' },
+      { c: 'MG',  d: '261',  f: '🇲🇬', n: 'Мадагаскар' },
+      { c: 'YT',  d: '262',  f: '🇾🇹', n: 'Майотта' },
+      { c: 'MO',  d: '853',  f: '🇲🇴', n: 'Макао (САР)' },
+      { c: 'MW',  d: '265',  f: '🇲🇼', n: 'Малави' },
+      { c: 'MY',  d: '60',   f: '🇲🇾', n: 'Малайзия' },
+      { c: 'ML',  d: '223',  f: '🇲🇱', n: 'Мали' },
+      { c: 'MV',  d: '960',  f: '🇲🇻', n: 'Мальдивы' },
+      { c: 'MT',  d: '356',  f: '🇲🇹', n: 'Мальта' },
+      { c: 'MA',  d: '212',  f: '🇲🇦', n: 'Марокко' },
+      { c: 'MH',  d: '692',  f: '🇲🇭', n: 'Маршалловы о-ва' },
+      { c: 'MX',  d: '52',   f: '🇲🇽', n: 'Мексика' },
+      { c: 'MZ',  d: '258',  f: '🇲🇿', n: 'Мозамбик' },
+      { c: 'MC',  d: '377',  f: '🇲🇨', n: 'Монако' },
+      { c: 'MN',  d: '976',  f: '🇲🇳', n: 'Монголия' },
+      { c: 'MS',  d: '1',    f: '🇲🇸', n: 'Монтсеррат' },
+      { c: 'MM',  d: '95',   f: '🇲🇲', n: 'Мьянма (Бирма)' },
+      { c: 'NA',  d: '264',  f: '🇳🇦', n: 'Намибия' },
+      { c: 'NR',  d: '674',  f: '🇳🇷', n: 'Науру' },
+      { c: 'NP',  d: '977',  f: '🇳🇵', n: 'Непал' },
+      { c: 'NE',  d: '227',  f: '🇳🇪', n: 'Нигер' },
+      { c: 'NG',  d: '234',  f: '🇳🇬', n: 'Нигерия' },
+      { c: 'NL',  d: '31',   f: '🇳🇱', n: 'Нидерланды' },
+      { c: 'NI',  d: '505',  f: '🇳🇮', n: 'Никарагуа' },
+      { c: 'NU',  d: '683',  f: '🇳🇺', n: 'Ниуэ' },
+      { c: 'NZ',  d: '64',   f: '🇳🇿', n: 'Новая Зеландия' },
+      { c: 'NC',  d: '687',  f: '🇳🇨', n: 'Новая Каледония' },
+      { c: 'NO',  d: '47',   f: '🇳🇴', n: 'Норвегия' },
+      { c: 'AE',  d: '971',  f: '🇦🇪', n: 'ОАЭ' },
+      { c: 'OM',  d: '968',  f: '🇴🇲', n: 'Оман' },
+      { c: 'PK',  d: '92',   f: '🇵🇰', n: 'Пакистан' },
+      { c: 'PW',  d: '680',  f: '🇵🇼', n: 'Палау' },
+      { c: 'PS',  d: '970',  f: '🇵🇸', n: 'Палестинские территории' },
+      { c: 'PA',  d: '507',  f: '🇵🇦', n: 'Панама' },
+      { c: 'PG',  d: '675',  f: '🇵🇬', n: 'Папуа — Новая Гвинея' },
+      { c: 'PY',  d: '595',  f: '🇵🇾', n: 'Парагвай' },
+      { c: 'PE',  d: '51',   f: '🇵🇪', n: 'Перу' },
+      { c: 'PL',  d: '48',   f: '🇵🇱', n: 'Польша' },
+      { c: 'PT',  d: '351',  f: '🇵🇹', n: 'Португалия' },
+      { c: 'PR',  d: '1',    f: '🇵🇷', n: 'Пуэрто-Рико' },
+      { c: 'KR',  d: '82',   f: '🇰🇷', n: 'Республика Корея' },
+      { c: 'RE',  d: '262',  f: '🇷🇪', n: 'Реюньон' },
+      { c: 'RW',  d: '250',  f: '🇷🇼', n: 'Руанда' },
+      { c: 'RO',  d: '40',   f: '🇷🇴', n: 'Румыния' },
+      { c: 'SV',  d: '503',  f: '🇸🇻', n: 'Сальвадор' },
+      { c: 'WS',  d: '685',  f: '🇼🇸', n: 'Самоа' },
+      { c: 'SM',  d: '378',  f: '🇸🇲', n: 'Сан-Марино' },
+      { c: 'ST',  d: '239',  f: '🇸🇹', n: 'Сан-Томе и Принсипи' },
+      { c: 'SA',  d: '966',  f: '🇸🇦', n: 'Саудовская Аравия' },
+      { c: 'MK',  d: '389',  f: '🇲🇰', n: 'Северная Македония' },
+      { c: 'MP',  d: '1',    f: '🇲🇵', n: 'Северные Марианские о-ва' },
+      { c: 'SC',  d: '248',  f: '🇸🇨', n: 'Сейшельские о-ва' },
+      { c: 'SN',  d: '221',  f: '🇸🇳', n: 'Сенегал' },
+      { c: 'VC',  d: '1',    f: '🇻🇨', n: 'Сент-Винсент и Гренадины' },
+      { c: 'KN',  d: '1',    f: '🇰🇳', n: 'Сент-Китс и Невис' },
+      { c: 'LC',  d: '1',    f: '🇱🇨', n: 'Сент-Люсия' },
+      { c: 'RS',  d: '381',  f: '🇷🇸', n: 'Сербия' },
+      { c: 'SG',  d: '65',   f: '🇸🇬', n: 'Сингапур' },
+      { c: 'SX',  d: '1',    f: '🇸🇽', n: 'Синт-Мартен' },
+      { c: 'SY',  d: '963',  f: '🇸🇾', n: 'Сирия' },
+      { c: 'SK',  d: '421',  f: '🇸🇰', n: 'Словакия' },
+      { c: 'SI',  d: '386',  f: '🇸🇮', n: 'Словения' },
+      { c: 'US',  d: '1',    f: '🇺🇸', n: 'Соединенные Штаты' },
+      { c: 'SB',  d: '677',  f: '🇸🇧', n: 'Соломоновы о-ва' },
+      { c: 'SO',  d: '252',  f: '🇸🇴', n: 'Сомали' },
+      { c: 'SD',  d: '249',  f: '🇸🇩', n: 'Судан' },
+      { c: 'SR',  d: '597',  f: '🇸🇷', n: 'Суринам' },
+      { c: 'SL',  d: '232',  f: '🇸🇱', n: 'Сьерра-Леоне' },
+      { c: 'TJ',  d: '992',  f: '🇹🇯', n: 'Таджикистан' },
+      { c: 'TH',  d: '66',   f: '🇹🇭', n: 'Таиланд' },
+      { c: 'TW',  d: '886',  f: '🇹🇼', n: 'Тайвань' },
+      { c: 'TZ',  d: '255',  f: '🇹🇿', n: 'Танзания' },
+      { c: 'TG',  d: '228',  f: '🇹🇬', n: 'Того' },
+      { c: 'TO',  d: '676',  f: '🇹🇴', n: 'Тонга' },
+      { c: 'TT',  d: '1',    f: '🇹🇹', n: 'Тринидад и Тобаго' },
+      { c: 'TV',  d: '688',  f: '🇹🇻', n: 'Тувалу' },
+      { c: 'TN',  d: '216',  f: '🇹🇳', n: 'Тунис' },
+      { c: 'TM',  d: '993',  f: '🇹🇲', n: 'Туркменистан' },
+      { c: 'TR',  d: '90',   f: '🇹🇷', n: 'Турция' },
+      { c: 'TC',  d: '1',    f: '🇹🇨', n: 'Тёркс и Кайкос' },
+      { c: 'UG',  d: '256',  f: '🇺🇬', n: 'Уганда' },
+      { c: 'UY',  d: '598',  f: '🇺🇾', n: 'Уругвай' },
+      { c: 'FO',  d: '298',  f: '🇫🇴', n: 'Фарерские о-ва' },
+      { c: 'FM',  d: '691',  f: '🇫🇲', n: 'Федеративные Штаты Микронезии' },
+      { c: 'FJ',  d: '679',  f: '🇫🇯', n: 'Фиджи' },
+      { c: 'PH',  d: '63',   f: '🇵🇭', n: 'Филиппины' },
+      { c: 'FI',  d: '358',  f: '🇫🇮', n: 'Финляндия' },
+      { c: 'FK',  d: '500',  f: '🇫🇰', n: 'Фолклендские о-ва' },
+      { c: 'FR',  d: '33',   f: '🇫🇷', n: 'Франция' },
+      { c: 'GF',  d: '594',  f: '🇬🇫', n: 'Французская Гвиана' },
+      { c: 'PF',  d: '689',  f: '🇵🇫', n: 'Французская Полинезия' },
+      { c: 'HR',  d: '385',  f: '🇭🇷', n: 'Хорватия' },
+      { c: 'CF',  d: '236',  f: '🇨🇫', n: 'Центрально-Африканская Республика' },
+      { c: 'TD',  d: '235',  f: '🇹🇩', n: 'Чад' },
+      { c: 'ME',  d: '382',  f: '🇲🇪', n: 'Черногория' },
+      { c: 'CZ',  d: '420',  f: '🇨🇿', n: 'Чехия' },
+      { c: 'CL',  d: '56',   f: '🇨🇱', n: 'Чили' },
+      { c: 'CH',  d: '41',   f: '🇨🇭', n: 'Швейцария' },
+      { c: 'SE',  d: '46',   f: '🇸🇪', n: 'Швеция' },
+      { c: 'LK',  d: '94',   f: '🇱🇰', n: 'Шри-Ланка' },
+      { c: 'EC',  d: '593',  f: '🇪🇨', n: 'Эквадор' },
+      { c: 'GQ',  d: '240',  f: '🇬🇶', n: 'Экваториальная Гвинея' },
+      { c: 'ER',  d: '291',  f: '🇪🇷', n: 'Эритрея' },
+      { c: 'SZ',  d: '268',  f: '🇸🇿', n: 'Эсватини' },
+      { c: 'EE',  d: '372',  f: '🇪🇪', n: 'Эстония' },
+      { c: 'ET',  d: '251',  f: '🇪🇹', n: 'Эфиопия' },
+      { c: 'ZA',  d: '27',   f: '🇿🇦', n: 'Южно-Африканская Республика' },
+      { c: 'SS',  d: '211',  f: '🇸🇸', n: 'Южный Судан' },
+      { c: 'JM',  d: '1',    f: '🇯🇲', n: 'Ямайка' },
+      { c: 'JP',  d: '81',   f: '🇯🇵', n: 'Япония' },
+      { c: 'IM',  d: '44',   f: '🇮🇲', n: 'о-в Мэн' },
+      { c: 'KY',  d: '1',    f: '🇰🇾', n: 'о-ва Кайман' },
+      { c: 'CK',  d: '682',  f: '🇨🇰', n: 'о-ва Кука' },
+    ],
+    countryByIso(iso) {
+      var want = String(iso || '').toUpperCase();
+      for (var i = 0; i < Domain.COUNTRIES.length; i++) {
+        if (Domain.COUNTRIES[i].c === want) return Domain.COUNTRIES[i];
+      }
+      return null;
+    },
+    /**
+     * Разбирает номер на код страны и местную часть.
+     *
+     * Если в номере есть «+», доверяем ему и ищем самый длинный подходящий
+     * код страны. Если «+» нет — это либо привычная местная запись
+     * (9991234567), либо номер с кодом текущей страны. Так «9991234567»
+     * остаётся российским, а не превращается в узбекский из-за того,
+     * что 998 тоже начинается с девятки.
+     */
+    splitPhone(value, fallbackIso) {
+      var fallback = Domain.countryByIso(fallbackIso) || Domain.countryByIso('RU');
+      var raw = String(value == null ? '' : value);
+      var d = Domain.normalizePhone(raw);
+      if (!d) return { iso: fallback.c, dial: fallback.d, national: '' };
+
+      // Привычная российская восьмёрка в начале
+      if (d.charAt(0) === '8' && d.length === 11) d = '7' + d.slice(1);
+
+      if (raw.indexOf('+') === -1) {
+        if (d.indexOf(fallback.d) === 0 && d.length > fallback.d.length) {
+          return { iso: fallback.c, dial: fallback.d, national: d.slice(fallback.d.length) };
+        }
+        return { iso: fallback.c, dial: fallback.d, national: d };
+      }
+
+      var best = null;
+      for (var i = 0; i < Domain.COUNTRIES.length; i++) {
+        var c = Domain.COUNTRIES[i];
+        if (d.indexOf(c.d) === 0 && (!best || c.d.length > best.d.length)) best = c;
+      }
+      if (!best) return { iso: fallback.c, dial: fallback.d, national: d };
+      // Код общий у нескольких стран (7 — Россия и Казахстан, 1 — США и Канада):
+      // оставляем ту, что выбрана сейчас.
+      if (fallback.d === best.d) best = fallback;
+      return { iso: best.c, dial: best.d, national: d.slice(best.d.length) };
+    },
+    /** Сколько цифр можно набрать после кода страны (по стандарту всего 15). */
+    nationalDigitLimit(dial) {
+      return Math.max(4, 15 - String(dial || '').length);
+    },
+    /** Местная часть номера с разделителями: 999 123-45-67 */
+    formatNational(dial, digits) {
+      var d = Domain.normalizePhone(digits).slice(0, Domain.nationalDigitLimit(dial));
+      if (!d) return '';
+      if (String(dial) === '7') {
+        var out = d.slice(0, 3);
+        if (d.length > 3) out += ' ' + d.slice(3, 6);
+        if (d.length > 6) out += '-' + d.slice(6, 8);
+        if (d.length > 8) out += '-' + d.slice(8, 10);
+        return out;
+      }
+      var parts = [];
+      for (var i = 0; i < d.length; i += 3) parts.push(d.slice(i, i + 3));
+      return parts.join(' ');
+    },
+    /** Собирает номер целиком: +7 999 123-45-67 */
+    composePhone(dial, national) {
+      var nat = Domain.formatNational(dial, national);
+      return nat ? '+' + dial + ' ' + nat : '';
+    },
     /** Приводит ввод к виду +7 999 123-45-67. Всё, кроме цифр, отбрасывается. */
     formatPhoneInput(value) {
       var d = String(value == null ? '' : value).replace(/\D/g, '');
@@ -2058,10 +2393,17 @@
       if (d.length > 9) out += '-' + d.slice(9, 11);
       return out;
     },
-    /** Телефон введён полностью: ровно 11 цифр. Пустое поле считается валидным. */
+    /**
+     * Телефон введён полностью. Пустое поле допустимо.
+     * Для России и Казахстана — ровно 11 цифр, как было.
+     * Для остальных стран — от 8 до 15 цифр (международный стандарт).
+     */
     isValidPhone(value) {
       var d = String(value == null ? '' : value).replace(/\D/g, '');
-      return d.length === 0 || d.length === 11;
+      if (d.length === 0) return true;
+      if (d.length > 15) return false;
+      if (d.charAt(0) === '7' || d.charAt(0) === '8') return d.length === 11;
+      return d.length >= 8;
     },
     shadeColor(color, percent) {
       var num = parseInt(color.replace('#', ''), 16);
@@ -5814,50 +6156,150 @@
       window.addEventListener('orientationchange', function () { setTimeout(apply, 200); });
     })();
 
-    /* —— Маска телефона для всех полей type="tel" ——
-       Ввод только цифр, формат +7 999 123-45-67, ровно 11 цифр. */
-    Array.prototype.forEach.call(document.querySelectorAll('input[type="tel"]'), function (el) {
-      el.setAttribute('inputmode', 'tel');
-      el.setAttribute('maxlength', '18');
-      el.setAttribute('autocomplete', 'tel');
-      if (!el.placeholder || el.placeholder === '+7 ...') el.placeholder = '+7 999 123-45-67';
-    });
+    /* —— Поле телефона с выбором страны ——
 
-    /* —— Предзаполненный «+7» ——
-       Встал в поле — код страны уже стоит, остаётся набрать десять цифр.
-       Ушёл, ничего не набрав, — поле снова пустое, чтобы у клиентов без
-       телефона не сохранялся огрызок «+7». */
-    document.addEventListener('focusin', function (e) {
-      var el = e.target;
-      if (!el || el.tagName !== 'INPUT' || el.type !== 'tel') return;
-      if (!el.value) {
-        el.value = '+7 ';
-        try { el.setSelectionRange(el.value.length, el.value.length); } catch (err) {}
+       Поле разделено на две части: кнопка с флагом и кодом страны и
+       собственно номер, куда пускаются ТОЛЬКО цифры. Наружу поле
+       по-прежнему отдаёт номер целиком («+7 999 123-45-67»), поэтому
+       весь остальной код читает el.value как раньше и ничего не знает
+       про эту кухню. */
+    (function setupPhoneInputs() {
+      var LAST_COUNTRY_KEY = 'dt_last_country';
+      var nativeValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+      var activeField = null;
+
+      function defaultIso() {
+        try { return localStorage.getItem(LAST_COUNTRY_KEY) || 'RU'; } catch (e) { return 'RU'; }
       }
-    });
-    document.addEventListener('focusout', function (e) {
-      var el = e.target;
-      if (!el || el.tagName !== 'INPUT' || el.type !== 'tel') return;
-      if (Domain.normalizePhone(el.value).length <= 1) {
-        el.value = '';
-        el.classList.remove('phone-incomplete');
+      function rememberIso(iso) {
+        try { localStorage.setItem(LAST_COUNTRY_KEY, iso); } catch (e) {}
       }
-    });
-    document.addEventListener('input', function (e) {
-      var el = e.target;
-      if (!el || el.tagName !== 'INPUT' || el.type !== 'tel') return;
-      // В поле входа логином может быть email — его форматировать нельзя.
-      if (/[a-zA-Zа-яА-Я@]/.test(el.value)) {
-        el.classList.remove('phone-incomplete');
-        return;
+
+      function enhance(el) {
+        if (el.dataset.phoneReady) return;
+        el.dataset.phoneReady = '1';
+
+        var country = Domain.countryByIso(defaultIso()) || Domain.countryByIso('RU');
+
+        var wrap = document.createElement('div');
+        wrap.className = 'phone-field';
+        el.parentNode.insertBefore(wrap, el);
+
+        var pick = document.createElement('button');
+        pick.type = 'button';
+        pick.className = 'phone-cc';
+        wrap.appendChild(pick);
+        wrap.appendChild(el);
+
+        el.setAttribute('inputmode', 'numeric');
+        el.setAttribute('autocomplete', 'tel-national');
+        el.classList.add('phone-national');
+
+        function repaint() {
+          pick.innerHTML = '<span class="phone-flag">' + country.f + '</span><span>+' +
+            country.d + '</span><span class="phone-caret">▾</span>';
+          el.placeholder = country.d === '7' ? '999 123-45-67' : 'номер телефона';
+          el.setAttribute('maxlength', String(Domain.nationalDigitLimit(country.d) + 6));
+        }
+
+        function national() { return Domain.normalizePhone(nativeValue.get.call(el)); }
+
+        function showIncomplete() {
+          var full = Domain.composePhone(country.d, national());
+          el.classList.toggle('phone-incomplete', !!full && !Domain.isValidPhone(full));
+        }
+
+        /* Наружу поле отдаёт и принимает номер целиком */
+        Object.defineProperty(el, 'value', {
+          configurable: true,
+          get: function () { return Domain.composePhone(country.d, national()); },
+          set: function (v) {
+            var parsed = Domain.splitPhone(v, country.c);
+            var found = Domain.countryByIso(parsed.iso);
+            if (found) country = found;
+            nativeValue.set.call(el, Domain.formatNational(country.d, parsed.national));
+            repaint();
+            showIncomplete();
+          }
+        });
+
+        el.addEventListener('input', function () {
+          var digits = national().slice(0, Domain.nationalDigitLimit(country.d));
+          var atEnd = el.selectionStart === nativeValue.get.call(el).length;
+          nativeValue.set.call(el, Domain.formatNational(country.d, digits));
+          if (atEnd) {
+            try {
+              var len = nativeValue.get.call(el).length;
+              el.setSelectionRange(len, len);
+            } catch (e) {}
+          }
+          showIncomplete();
+        });
+        el.addEventListener('blur', showIncomplete);
+
+        pick.addEventListener('click', function () {
+          activeField = {
+            apply: function (c) {
+              var digits = national();
+              country = c;
+              rememberIso(c.c);
+              nativeValue.set.call(el, Domain.formatNational(c.d, digits));
+              repaint();
+              showIncomplete();
+              el.focus();
+            }
+          };
+          openPicker();
+        });
+
+        repaint();
       }
-      var formatted = Domain.formatPhoneInput(el.value);
-      if (el.value !== formatted) {
-        el.value = formatted;
-        try { el.setSelectionRange(formatted.length, formatted.length); } catch (err) {}
+
+      /* —— Список стран —— */
+      function renderList(query) {
+        var box = UI.$('ccList');
+        if (!box) return;
+        var q = (query || '').trim().toLowerCase();
+        var digits = q.replace(/\D/g, '');
+        var rows = Domain.COUNTRIES.filter(function (c) {
+          if (!q) return true;
+          if (digits && c.d.indexOf(digits) === 0) return true;
+          return c.n.toLowerCase().indexOf(q) === 0 || c.n.toLowerCase().indexOf(' ' + q) !== -1;
+        });
+        if (!rows.length) {
+          box.innerHTML = '<p class="text-sm text-muted" style="padding:12px;">Ничего не нашлось</p>';
+          return;
+        }
+        box.innerHTML = rows.map(function (c) {
+          return '<button type="button" class="cc-item" data-iso="' + c.c + '">' +
+            '<span class="cc-flag">' + c.f + '</span>' +
+            '<span class="cc-name">' + Domain.escapeHtml(c.n) + '</span>' +
+            '<span class="cc-dial">+' + c.d + '</span></button>';
+        }).join('');
       }
-      el.classList.toggle('phone-incomplete', !Domain.isValidPhone(el.value));
-    }, true);
+
+      function openPicker() {
+        var search = UI.$('ccSearch');
+        if (search) search.value = '';
+        renderList('');
+        UI.openModal('ccSheet');
+        if (search) setTimeout(function () { search.focus(); }, 50);
+      }
+
+      var searchEl = UI.$('ccSearch');
+      if (searchEl) searchEl.addEventListener('input', function () { renderList(searchEl.value); });
+
+      var listEl = UI.$('ccList');
+      if (listEl) listEl.addEventListener('click', function (e) {
+        var btn = e.target.closest('[data-iso]');
+        if (!btn || !activeField) return;
+        var c = Domain.countryByIso(btn.dataset.iso);
+        if (c) activeField.apply(c);
+        UI.closeModal('ccSheet');
+      });
+
+      Array.prototype.forEach.call(document.querySelectorAll('input[type="tel"]'), enhance);
+    })();
 
     document.body.addEventListener('click', function (e) {
       var el = e.target.closest('[data-action]');
