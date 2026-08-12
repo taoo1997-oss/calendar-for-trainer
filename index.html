@@ -117,10 +117,17 @@
 
     /* Поля поиска рисовались браузером по умолчанию — отсюда белые скруглённые
        прямоугольники в тёмной теме */
+    /* Правило добавляло рамку всем полям без разбора — в том числе выбору
+       месяца, у которого рамки быть не должно. Поэтому задаём только цвета,
+       а рамку оставляем той, что прописана самому элементу. */
     [data-theme="dark"] input:not([type="checkbox"]):not([type="color"]),
     [data-theme="dark"] textarea,
     [data-theme="dark"] select {
-      background: var(--card); border: 1px solid var(--border); color: var(--text);
+      background: var(--card); border-color: var(--border); color: var(--text);
+    }
+    [data-theme="dark"] .club-month-select,
+    [data-theme="black"] .club-month-select {
+      background: transparent; border: none;
     }
     [data-theme="dark"] input::placeholder,
     [data-theme="black"] input::placeholder,
@@ -557,24 +564,33 @@
     }
     .time-slot {
       display: flex; height: 96px;
-      border-bottom: 1px solid var(--border);
       pointer-events: none;
       position: relative;
     }
-    .time-slot:first-of-type { border-top: none; }
-    .time-slot:last-of-type { border-bottom: none; }
+    /* Часовая черта начинается после колонки времени — так она не доходит до
+       краёв сетки и не спорит со скруглением. */
+    .time-slot::before {
+      content: '';
+      position: absolute;
+      left: 42px; right: 10px; bottom: 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .time-slot:last-of-type::before { display: none; }
     .time-slot::after {
       content: '';
       position: absolute;
-      left: 42px; right: 0; top: 50%;
-      border-top: 1px dashed color-mix(in srgb, var(--border) 80%, transparent);
+      left: 42px; right: 10px; top: 50%;
+      border-top: 1px dashed color-mix(in srgb, var(--border) 55%, transparent);
       pointer-events: none;
     }
     .time-label {
-      width: 42px; flex-shrink: 0; padding: 6px 4px; font-size: 0.65rem; font-weight: 500;
+      width: 42px; flex-shrink: 0; padding: 6px 6px 6px 4px;
+      font-size: 0.65rem; font-weight: 500;
       color: var(--text-muted); text-align: right;
-      border-right: 1px solid var(--border);
-      background: color-mix(in srgb, var(--bg) 70%, var(--card));
+      /* Вертикальная черта и подложка колонки часов упирались в скруглённые
+         углы и выглядели обрубленными. Календарям она не нужна — время и так
+         отделено пробелом. */
+      background: transparent;
     }
     .time-content { flex: 1; min-height: 96px; }
 
@@ -807,9 +823,54 @@
     }
     .money-rows { display: flex; flex-direction: column; }
     .money-row {
-      display: flex; align-items: center; gap: 10px;
-      padding: 11px 16px; border-top: 1px solid var(--border);
+      display: flex; align-items: center; gap: 10px; width: 100%;
+      padding: 12px 16px; border-top: 1px solid var(--border);
+      background: none; border-left: none; border-right: none; border-bottom: none;
+      font-family: inherit; text-align: left; cursor: pointer; color: var(--text);
     }
+    .money-row:active { background: var(--bg); }
+    .money-row-chevron {
+      flex: 0 0 auto; color: var(--text-muted); font-size: 1.2rem;
+      line-height: 1; margin-left: 2px; opacity: 0.6;
+    }
+
+    .money-detail-head {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 12px; margin-bottom: 14px;
+    }
+    .money-detail-sum {
+      font-size: 1.6rem; font-weight: 800; color: var(--primary);
+      letter-spacing: -0.02em; line-height: 1.1;
+    }
+    .money-detail-sub { font-size: 0.72rem; color: var(--text-muted); margin-top: 2px; }
+    .money-detail-list { max-height: 56vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+    .detail-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 11px 4px;
+    }
+    .detail-row + .detail-row { border-top: 1px solid var(--border); }
+    .detail-row.tappable { cursor: pointer; border-radius: 12px; }
+    .detail-row.tappable:active { background: var(--bg); }
+    .detail-avatar {
+      flex: 0 0 auto; width: 38px; height: 38px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--primary-light); color: var(--primary);
+      font-weight: 700; font-size: 0.95rem;
+    }
+    .detail-info { flex: 1; min-width: 0; }
+    .detail-name {
+      font-size: 0.92rem; font-weight: 600; color: var(--text);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .detail-meta { font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; }
+    .detail-sum {
+      flex: 0 0 auto; font-size: 0.95rem; font-weight: 700; color: var(--text);
+      white-space: nowrap;
+    }
+    .detail-empty {
+      padding: 30px 12px; text-align: center; color: var(--text-muted); font-size: 0.85rem;
+    }
+    .detail-empty .empty-icon { font-size: 1.8rem; margin-bottom: 8px; }
     .money-row-icon {
       flex: 0 0 auto; width: 30px; height: 30px; border-radius: 9px;
       display: flex; align-items: center; justify-content: center;
@@ -1256,6 +1317,28 @@
 <body>
   
   <!-- Выбор контактов телефона (свой список, без зависимости от окна системы) -->
+  <div class="modal-overlay" id="moneyDetailModal">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title" id="moneyDetailTitle">Поступления</div>
+        <button type="button" class="modal-close" data-close="moneyDetailModal">×</button>
+      </div>
+      <div class="money-detail-head">
+        <div>
+          <div class="money-detail-sum" id="moneyDetailSum">0 ₽</div>
+          <div class="money-detail-sub" id="moneyDetailSub">—</div>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm hidden" id="moneyGroupBtn" data-action="money-toggle-group">
+          Сгруппировать
+        </button>
+      </div>
+      <div id="moneyDetailList"></div>
+      <button type="button" class="btn btn-secondary btn-block mt-2 hidden" id="moneyDetailAdd" data-action="income-add">
+        ➕ Добавить доход
+      </button>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="incomeModal">
     <div class="modal">
       <div class="modal-header">
@@ -1757,7 +1840,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-11 · 20',
+    BUILD: '2026-08-12 · 21',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -3071,7 +3154,8 @@
           amount: sum,
           note: 'Абонемент ' + sessions + ' зан. — ' + c.name,
           type: 'abonement',
-          clientId: c.id
+          clientId: c.id,
+          sessions: parseInt(sessions, 10) || null
         });
       }
       // Сразу применить к уже существующим занятиям «Группа», где этот клиент в списке
@@ -3575,6 +3659,114 @@
       });
       return n;
     },
+    /**
+     * Кто сколько принёс за одно занятие.
+     *
+     * Групповое — каждый заплативший приносит полную цену.
+     * Обычное — цена указана за занятие целиком, поэтому делим её поровну
+     * между заплатившими: двое на занятии за 2500 дают по 1250. Остаток от
+     * деления отдаём первому, чтобы сумма долей точно сходилась с ценой.
+     */
+    classIncomeByClient(cls) {
+      if (!cls || cls.clubGroupId) return [];
+      var price = Services.classPrice(cls);
+      if (!price) return [];
+      var payers = (cls.clientIds || []).filter(function (cid) {
+        if (!(cls.payments && cls.payments[cid])) return false;
+        var c = State.clients.find(function (x) { return x.id === cid; });
+        return !Services.paidByAbonement(c, cls);
+      });
+      if (!payers.length) return [];
+
+      var shares;
+      if (cls.isGroup) {
+        shares = payers.map(function () { return price; });
+      } else {
+        var base = Math.floor(price / payers.length);
+        shares = payers.map(function () { return base; });
+        shares[0] += price - base * payers.length;
+      }
+
+      return payers.map(function (cid, i) {
+        var c = State.clients.find(function (x) { return x.id === cid; });
+        return {
+          clientId: cid,
+          name: c ? c.name : 'Удалён',
+          amount: shares[i],
+          date: cls.date,
+          time: cls.time,
+          title: cls.title || '',
+          isGroup: !!cls.isGroup,
+          people: payers.length,
+          classId: cls.id
+        };
+      });
+    },
+
+    /** Все поступления с занятий за месяц, по ученикам */
+    lessonPaymentsForMonth(key) {
+      var mk = key || Domain.currentMonthKey();
+      var rows = [];
+      State.classes.forEach(function (cls) {
+        if (!cls.date || cls.date.slice(0, 7) !== mk) return;
+        rows = rows.concat(Services.classIncomeByClient(cls));
+      });
+      rows.sort(function (a, b) {
+        var d = String(b.date).localeCompare(String(a.date));
+        return d !== 0 ? d : String(b.time || '').localeCompare(String(a.time || ''));
+      });
+      return rows;
+    },
+
+    /** То же самое, но свёрнуто по ученикам */
+    lessonPaymentsGrouped(key) {
+      var byClient = {};
+      Services.lessonPaymentsForMonth(key).forEach(function (r) {
+        if (!byClient[r.clientId]) {
+          byClient[r.clientId] = { clientId: r.clientId, name: r.name, amount: 0, count: 0 };
+        }
+        byClient[r.clientId].amount += r.amount;
+        byClient[r.clientId].count++;
+      });
+      return Object.keys(byClient).map(function (k) { return byClient[k]; })
+        .sort(function (a, b) { return b.amount - a.amount; });
+    },
+
+    /** Проданные абонементы за месяц */
+    abonementSalesForMonth(key) {
+      var mk = key || Domain.currentMonthKey();
+      return (State.incomes || []).filter(function (inc) {
+        return inc.type === 'abonement' && inc.date && inc.date.slice(0, 7) === mk;
+      }).map(function (inc) {
+        var c = inc.clientId
+          ? State.clients.find(function (x) { return x.id === inc.clientId; })
+          : null;
+        // У ранних записей отдельного поля не было — достаём из подписи
+        var sessions = inc.sessions;
+        if (!sessions) {
+          var m = /(\d+)\s*зан/.exec(inc.note || '');
+          sessions = m ? parseInt(m[1], 10) : null;
+        }
+        var name = c ? c.name : null;
+        if (!name) {
+          var m2 = /—\s*(.+)$/.exec(inc.note || '');
+          name = m2 ? m2[1].trim() : 'Без имени';
+        }
+        return {
+          id: inc.id, date: inc.date, amount: inc.amount,
+          name: name, sessions: sessions
+        };
+      }).sort(function (a, b) { return String(b.date).localeCompare(String(a.date)); });
+    },
+
+    /** Прочие поступления за месяц */
+    extraIncomesForMonth(key) {
+      var mk = key || Domain.currentMonthKey();
+      return (State.incomes || []).filter(function (inc) {
+        return inc.type !== 'abonement' && inc.date && inc.date.slice(0, 7) === mk;
+      }).sort(function (a, b) { return String(b.date).localeCompare(String(a.date)); });
+    },
+
     /** Итог одного дня с разбивкой */
     dayMoney(dateStr) {
       var fromClasses = 0, paidPeople = 0;
@@ -3636,6 +3828,7 @@
         note: (data.note || '').trim(),
         type: data.type || 'extra',
         clientId: data.clientId || null,
+        sessions: data.sessions || null,
         createdAt: new Date().toISOString()
       };
       State.incomes.push(inc);
@@ -4506,14 +4699,16 @@
       var m = Services.monthMoney(key);
       var card = this.$('moneyCard');
       if (card) {
-        function row(icon, title, sub, sum, isZero) {
-          return '<div class="money-row' + (isZero ? ' is-zero' : '') + '">' +
+        function row(icon, title, sub, sum, isZero, kind) {
+          return '<button type="button" class="money-row' + (isZero ? ' is-zero' : '') +
+              '" data-action="money-detail" data-kind="' + kind + '">' +
             '<span class="money-row-icon">' + icon + '</span>' +
             '<span class="money-row-text">' + title +
               (sub ? '<span class="money-row-sub">' + sub + '</span>' : '') +
             '</span>' +
             '<span class="money-row-sum">' + UI.formatMoney(sum) + '</span>' +
-          '</div>';
+            '<span class="money-row-chevron">›</span>' +
+          '</button>';
         }
         card.innerHTML =
           '<div class="money-hero">' +
@@ -4522,29 +4717,125 @@
             '<div class="money-total">' + UI.formatMoney(m.total) + '</div>' +
           '</div>' +
           '<div class="money-rows">' +
-            row('🎯', 'Занятия', m.people ? m.people + ' оплат' : 'нет оплат', m.classes, !m.classes) +
-            row('🎟', 'Абонементы', m.abonCount ? m.abonCount + ' шт.' : 'не продавались', m.abonements, !m.abonements) +
-            row('💰', 'Прочее', m.extra ? 'разовые поступления' : 'ничего не добавлено', m.extra, !m.extra) +
+            row('🎯', 'Занятия', m.people ? m.people + ' оплат' : 'нет оплат', m.classes, !m.classes, 'lessons') +
+            row('🎟', 'Абонементы', m.abonCount ? m.abonCount + ' шт.' : 'не продавались', m.abonements, !m.abonements, 'abonements') +
+            row('💰', 'Прочее', m.extra ? 'разовые поступления' : 'ничего не добавлено', m.extra, !m.extra, 'extra') +
           '</div>';
       }
 
-      var listEl = this.$('incomeList');
-      if (listEl) {
-        var items = Services.incomesForMonth(key);
-        listEl.innerHTML = items.length
-          ? '<div class="section-caption">Поступления за месяц</div>' + items.map(function (inc) {
-              var isAbon = inc.type === 'abonement';
-              return '<div class="income-row" data-action="income-open" data-id="' + inc.id + '">' +
-                '<div><div class="income-row-note">' +
-                  (isAbon ? '🎟 ' : '💰 ') +
-                  Domain.escapeHtml(inc.note || (isAbon ? 'Абонемент' : 'Доход')) +
-                '</div><div class="income-row-date">' +
-                  Domain.formatDisplayDate(inc.date) + '</div></div>' +
-                '<div class="income-row-sum">' + UI.formatMoney(inc.amount) + '</div>' +
-              '</div>';
-            }).join('')
-          : '';
+      /* Список поступлений с главного экрана убран: он занимал пол-экрана и
+         дублировал то, что теперь открывается по нажатию на строку «Прочее». */
+    },
+    /** Какой раздел денег открыт и включена ли группировка */
+    moneyDetailKind: 'lessons',
+    moneyGrouped: false,
+
+    renderMoneyDetail() {
+      var kind = this.moneyDetailKind;
+      var key = this.moneyMonth();
+      var monthName = Domain.monthLabel(key).toLowerCase();
+      var titles = { lessons: 'Занятия', abonements: 'Абонементы', extra: 'Прочее' };
+      var titleEl = this.$('moneyDetailTitle');
+      if (titleEl) titleEl.textContent = titles[kind] || 'Поступления';
+
+      var groupBtn = this.$('moneyGroupBtn');
+      var addBtn = this.$('moneyDetailAdd');
+      if (groupBtn) groupBtn.classList.toggle('hidden', kind !== 'lessons');
+      if (addBtn) addBtn.classList.toggle('hidden', kind !== 'extra');
+
+      var listEl = this.$('moneyDetailList');
+      var sumEl = this.$('moneyDetailSum');
+      var subEl = this.$('moneyDetailSub');
+      if (!listEl) return;
+      listEl.className = 'money-detail-list';
+
+      var rows = [], total = 0, sub = '';
+
+      if (kind === 'lessons') {
+        if (this.moneyGrouped) {
+          var g = Services.lessonPaymentsGrouped(key);
+          g.forEach(function (r) { total += r.amount; });
+          sub = g.length + ' ' + UI.plural(g.length, 'ученик', 'ученика', 'учеников') + ' · ' + monthName;
+          rows = g.map(function (r) {
+            return '<div class="detail-row">' +
+              '<span class="detail-avatar">' + Domain.escapeHtml(UI.contactInitial(r.name)) + '</span>' +
+              '<span class="detail-info">' +
+                '<span class="detail-name">' + Domain.escapeHtml(r.name) + '</span>' +
+                '<span class="detail-meta">' + r.count + ' ' +
+                  UI.plural(r.count, 'оплата', 'оплаты', 'оплат') + '</span>' +
+              '</span>' +
+              '<span class="detail-sum">' + UI.formatMoney(r.amount) + '</span>' +
+            '</div>';
+          });
+        } else {
+          var list = Services.lessonPaymentsForMonth(key);
+          list.forEach(function (r) { total += r.amount; });
+          sub = list.length + ' ' + UI.plural(list.length, 'оплата', 'оплаты', 'оплат') + ' · ' + monthName;
+          rows = list.map(function (r) {
+            var note = Domain.formatDisplayDate(r.date) + ' · ' + r.time;
+            if (!r.isGroup && r.people > 1) note += ' · пополам';
+            else if (r.isGroup) note += ' · группа';
+            return '<div class="detail-row tappable" data-action="class-open" data-id="' + r.classId + '">' +
+              '<span class="detail-avatar">' + Domain.escapeHtml(UI.contactInitial(r.name)) + '</span>' +
+              '<span class="detail-info">' +
+                '<span class="detail-name">' + Domain.escapeHtml(r.name) + '</span>' +
+                '<span class="detail-meta">' + note + '</span>' +
+              '</span>' +
+              '<span class="detail-sum">' + UI.formatMoney(r.amount) + '</span>' +
+            '</div>';
+          });
+        }
+      } else if (kind === 'abonements') {
+        var sales = Services.abonementSalesForMonth(key);
+        sales.forEach(function (r) { total += r.amount; });
+        sub = sales.length + ' ' + UI.plural(sales.length, 'абонемент', 'абонемента', 'абонементов') +
+          ' · ' + monthName;
+        rows = sales.map(function (r) {
+          var meta = Domain.formatDisplayDate(r.date);
+          if (r.sessions) meta += ' · ' + r.sessions + ' ' +
+            UI.plural(r.sessions, 'занятие', 'занятия', 'занятий');
+          return '<div class="detail-row">' +
+            '<span class="detail-avatar">' + Domain.escapeHtml(UI.contactInitial(r.name)) + '</span>' +
+            '<span class="detail-info">' +
+              '<span class="detail-name">' + Domain.escapeHtml(r.name) + '</span>' +
+              '<span class="detail-meta">' + meta + '</span>' +
+            '</span>' +
+            '<span class="detail-sum">' + UI.formatMoney(r.amount) + '</span>' +
+          '</div>';
+        });
+      } else {
+        var extras = Services.extraIncomesForMonth(key);
+        extras.forEach(function (r) { total += r.amount; });
+        sub = extras.length + ' ' + UI.plural(extras.length, 'запись', 'записи', 'записей') +
+          ' · ' + monthName;
+        rows = extras.map(function (r) {
+          return '<div class="detail-row tappable" data-action="income-open" data-id="' + r.id + '">' +
+            '<span class="detail-avatar">💰</span>' +
+            '<span class="detail-info">' +
+              '<span class="detail-name">' + Domain.escapeHtml(r.note || 'Доход') + '</span>' +
+              '<span class="detail-meta">' + Domain.formatDisplayDate(r.date) + '</span>' +
+            '</span>' +
+            '<span class="detail-sum">' + UI.formatMoney(r.amount) + '</span>' +
+          '</div>';
+        });
       }
+
+      if (sumEl) sumEl.textContent = this.formatMoney(total);
+      if (subEl) subEl.textContent = sub;
+      listEl.innerHTML = rows.length
+        ? rows.join('')
+        : '<div class="detail-empty"><div class="empty-icon">🗒</div>За ' + monthName +
+          ' здесь пусто</div>';
+
+      if (groupBtn) groupBtn.textContent = this.moneyGrouped ? 'По датам' : 'Сгруппировать';
+    },
+    /** Склонение: 1 оплата, 2 оплаты, 5 оплат */
+    plural(n, one, few, many) {
+      var a = Math.abs(n) % 100, b = a % 10;
+      if (a > 10 && a < 20) return many;
+      if (b > 1 && b < 5) return few;
+      if (b === 1) return one;
+      return many;
     },
     renderClassDetail(cls) {
       var clients = (cls.clientIds || []).map(function (cid) {
@@ -5231,6 +5522,8 @@
       if (!key || !/^\d{4}-\d{2}$/.test(key)) return;
       State.moneyMonth = key;
       UI.renderClients();
+      var det = document.getElementById('moneyDetailModal');
+      if (det && det.classList.contains('show')) UI.renderMoneyDetail();
     },
     shiftMoneyMonth(delta) {
       var next = Domain.addMonthsToKey(UI.moneyMonth(), delta);
@@ -5266,6 +5559,8 @@
       UI.closeModal('incomeModal');
       UI.renderClients();
       UI.renderSchedule();
+      var detail = document.getElementById('moneyDetailModal');
+      if (detail && detail.classList.contains('show')) UI.renderMoneyDetail();
     },
     /** Выбрать месяц архива в разделе «Клуб» (с запоминанием) */
     setClubMonth(key) {
@@ -5494,6 +5789,23 @@
           }
           break;
         }
+        case 'money-detail': {
+          UI.moneyDetailKind = el.dataset.kind || 'lessons';
+          UI.moneyGrouped = false;
+          UI.renderMoneyDetail();
+          UI.openModal('moneyDetailModal');
+          break;
+        }
+        case 'money-toggle-group': {
+          UI.moneyGrouped = !UI.moneyGrouped;
+          UI.renderMoneyDetail();
+          break;
+        }
+        case 'class-open': {
+          UI.closeModal('moneyDetailModal');
+          Controllers.openClassDetail(el.dataset.id);
+          break;
+        }
         case 'money-month-prev': Controllers.shiftMoneyMonth(-1); break;
         case 'money-month-next': Controllers.shiftMoneyMonth(1); break;
         case 'income-add': Controllers.openIncomeModal(null); break;
@@ -5506,6 +5818,8 @@
           UI.closeModal('incomeModal');
           UI.renderClients();
           UI.renderSchedule();
+          var det = document.getElementById('moneyDetailModal');
+          if (det && det.classList.contains('show')) UI.renderMoneyDetail();
           UI.showToast('Удалено');
           break;
         }
