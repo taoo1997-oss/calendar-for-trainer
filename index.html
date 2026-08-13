@@ -1689,8 +1689,8 @@
           </div>
           <div class="form-group" style="margin:12px 0 0;">
             <label>Стоимость абонемента, ₽</label>
-            <input type="number" id="abonementPrice" min="0" step="100" inputmode="numeric" placeholder="6000">
-            <p class="text-sm text-muted" style="margin-top:6px;font-size:0.7rem;">Запишется в доход датой выдачи. Заполните до нажатия «+».</p>
+            <input type="number" id="abonementPrice" min="1" step="100" inputmode="numeric" placeholder="6000" required>
+            <p class="text-sm text-muted" style="margin-top:6px;font-size:0.7rem;">Обязательно. Запишется в доход сегодняшним днём — без стоимости абонемент не выдаётся.</p>
           </div>
           <div class="chip-row" id="abonementChips" style="margin-top:12px;">
             <button type="button" class="chip" data-action="abon-add" data-sessions="4">+ 4</button>
@@ -1929,7 +1929,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-13 · 33',
+    BUILD: '2026-08-13 · 35',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -3433,6 +3433,7 @@
       }
       State.persist();
       try { Services.migrateAbonementDates(); } catch (e) {}
+      try { Services.cleanupOrphanAbonementSales(); } catch (e) {}
       try { Services.syncAllGroupClasses(); } catch (e) {}
     },
 
@@ -3576,6 +3577,12 @@
       if (!c) return null;
       sessions = parseInt(sessions, 10);
       if ([4, 6, 8].indexOf(sessions) < 0) return null;
+      /* Без стоимости абонемент не выдаём.
+         Раньше пустое поле цены давало абонемент без записи о продаже:
+         занятия списывались, а деньги в отчёт не попадали и терялись молча.
+         Теперь либо и то, и другое, либо ничего. */
+      var priceNum = parseInt(price, 10);
+      if (!(priceNum > 0)) return null;
       var prevRem = (c.abonement && c.abonement.remaining > 0) ? c.abonement.remaining : 0;
       /* «Всего» тоже переносится только у действующего абонемента.
          Если прошлый израсходован до нуля — начинается новый период,
@@ -3602,16 +3609,18 @@
         packSize: sessions,
         startDate: startDate,
         saleIds: saleIds,
-        price: Math.max(0, parseInt(price, 10) || 0),
+        price: priceNum,
         issuedAt: new Date().toISOString(),
         debits: debits
       };
       // Продажа абонемента — это доход датой выдачи
-      var sum = Math.max(0, parseInt(price, 10) || 0);
-      if (sum > 0) {
+      /* Продажа записывается днём нажатия кнопки. Дату начала действия
+         абонемента можно потом сдвинуть задним числом — на дату продажи
+         это не влияет: деньги пришли сегодня. */
+      {
         var sale = Services.addIncome({
           date: today,
-          amount: sum,
+          amount: priceNum,
           note: 'Абонемент ' + sessions + ' зан. — ' + c.name,
           type: 'abonement',
           clientId: c.id,
@@ -3760,6 +3769,32 @@
       });
       if (changed) State.persist();
       return changed;
+    },
+    /**
+     * Разовая уборка: продажи абонементов, которых больше нет.
+     *
+     * Сбросы, сделанные до сборки 33, оставляли продажу висеть в отчёте —
+     * доход за месяц оставался завышенным. Признак такой записи: клиент на
+     * месте, а абонемента у него нет вовсе. Значит, абонемент сбросили.
+     *
+     * Чего эта уборка НЕ трогает:
+     *   • израсходованные абонементы (0 из 8) — там объект абонемента остался,
+     *     деньги были получены честно;
+     *   • продажи прошлых периодов у клиента с действующим абонементом;
+     *   • продажи клиентов, которых удалили целиком, — это уже история,
+     *     и решать за неё приложение не должно.
+     */
+    cleanupOrphanAbonementSales() {
+      var before = State.incomes.length;
+      State.incomes = State.incomes.filter(function (inc) {
+        if (inc.type !== 'abonement' || !inc.clientId) return true;
+        var c = State.clientById(inc.clientId);
+        if (!c) return true;              // клиента удалили — запись оставляем
+        return !!c.abonement;             // абонемента нет → продажа осиротела
+      });
+      var removed = before - State.incomes.length;
+      if (removed) State.persist();
+      return removed;
     },
     /** Списать 1 занятие абонемента за classId (если ещё не списано) */
     debitAbonement(clientId, classId) {
@@ -4016,6 +4051,7 @@
       }
       if (data.settings) State.settings = Object.assign({}, CONFIG.DEFAULT_SETTINGS, data.settings);
       try { Services.migrateAbonementDates(); } catch (e) { console.error(e); }
+      try { Services.cleanupOrphanAbonementSales(); } catch (e) { console.error(e); }
       try { Services.syncAllGroupClasses(); } catch (e) { console.error(e); }
       State.persist();
     },
@@ -5692,6 +5728,12 @@
           var sessions = el.dataset.sessions;
           var priceEl = UI.$('abonementPrice');
           var abonPrice = priceEl ? parseInt(priceEl.value, 10) || 0 : 0;
+          if (!(abonPrice > 0)) {
+            UI.showToast('Укажите стоимость абонемента');
+            if (priceEl) { priceEl.classList.add('phone-incomplete'); priceEl.focus(); }
+            break;
+          }
+          if (priceEl) priceEl.classList.remove('phone-incomplete');
           Services.addAbonement(cid, sessions, abonPrice);
           if (priceEl) priceEl.value = '';
           var client = State.clientById(cid);
@@ -7064,6 +7106,7 @@
     }
 
     try { Services.migrateAbonementDates(); } catch (e) { console.error(e); }
+      try { Services.cleanupOrphanAbonementSales(); } catch (e) { console.error(e); }
     try { Services.syncAllGroupClasses(); } catch (e) { console.error(e); }
     State.currentWeekStart = Domain.getMonday(new Date());
     State.selectedDate = Domain.formatDate(new Date());
