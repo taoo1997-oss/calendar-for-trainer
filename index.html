@@ -825,6 +825,34 @@
     .ask-list-item:last-child { border-bottom: none; }
     .ask-list-when { font-weight: 700; }
     .ask-list-what { color: var(--text-muted); }
+    /* Окно накладок: две (или больше) карточки на выбор */
+    #conflictModal { z-index: 660; align-items: center; padding: 20px; }
+    .conflict-modal { border-radius: 22px; max-width: 420px; padding: 20px 16px 16px; }
+    .conflict-head { text-align: center; margin-bottom: 14px; }
+    .conflict-step { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .conflict-when { font-size: 1.05rem; font-weight: 700; color: var(--text); margin-top: 4px; }
+    .conflict-hint { font-size: 0.75rem; color: var(--text-muted); margin-top: 8px; }
+    .conflict-card {
+      display: block; width: 100%; text-align: left; cursor: pointer;
+      border: 2px solid var(--border); border-radius: 16px;
+      background: var(--card); color: var(--text);
+      padding: 12px 14px; margin-bottom: 10px;
+    }
+    .conflict-card:active { transform: scale(0.99); }
+    .conflict-card.is-new { border-color: var(--primary); }
+    .conflict-card-tag {
+      display: inline-block; font-size: 0.66rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.04em;
+      color: var(--text-muted); margin-bottom: 6px;
+    }
+    .conflict-card.is-new .conflict-card-tag { color: var(--primary); }
+    .conflict-card-time { font-size: 0.95rem; font-weight: 700; }
+    .conflict-card-who { font-size: 0.84rem; color: var(--text-muted); margin-top: 4px; line-height: 1.35; }
+    .conflict-card-over { font-size: 0.72rem; color: var(--danger); margin-top: 6px; }
+    .conflict-sep {
+      text-align: center; font-size: 0.7rem; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 0.08em; margin: 2px 0 10px;
+    }
     .ask-choices { text-align: left; margin-bottom: 4px; }
     .ask-choices.hidden { display: none; }
     .ask-actions { display: flex; gap: 10px; }
@@ -1942,6 +1970,22 @@
   </div><!-- /appShell -->
 
   <!-- Свой диалог вместо браузерного confirm/alert/prompt -->
+  <!-- Накладка при копировании: выбираем занятие карточкой, а не текстом -->
+  <div class="modal-overlay" id="conflictModal">
+    <div class="modal conflict-modal">
+      <div class="conflict-head">
+        <div class="conflict-step" id="conflictStep"></div>
+        <div class="conflict-when" id="conflictWhen"></div>
+        <div class="conflict-hint">Нажмите на занятие, которое оставить</div>
+      </div>
+      <div id="conflictCards"></div>
+      <div class="ask-actions">
+        <button type="button" class="btn btn-secondary" data-action="conflict-skip">Пропустить</button>
+        <button type="button" class="btn btn-secondary" data-action="conflict-keep-all">Оставить все</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="askModal">
     <div class="modal ask-modal">
       <div class="ask-icon" id="askIcon">❓</div>
@@ -1984,7 +2028,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-13 · 42',
+    BUILD: '2026-08-13 · 43',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -2141,6 +2185,12 @@
    * ========================================================= */
   const Domain = {
     uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); },
+    /** Сколько минут два занятия занимают одно и то же время */
+    overlapMinutes(startA, durA, startB, durB) {
+      var end = Math.min(startA + durA, startB + durB);
+      var begin = Math.max(startA, startB);
+      return Math.max(0, end - begin);
+    },
     getMonday(d) {
       const date = new Date(d);
       const day = date.getDay();
@@ -4058,6 +4108,53 @@
       State.persist();
       return { copied: copied, already: already, conflicts: conflicts, total: prev.length };
     },
+    /**
+     * Собирает карточки для окна накладки: переносимое занятие и те,
+     * что уже стоят в это время. У каждого — своё время и на сколько
+     * минут оно пересекается с переносимым.
+     */
+    conflictCards(conflict) {
+      var draft = conflict.draft;
+      var start = Domain.timeToMinutes(draft.time);
+      var dur = draft.duration || 60;
+      var cards = [{
+        kind: 'new',
+        id: null,
+        time: Domain.formatTimeRange(draft.time, dur),
+        who: Services.classDisplayTitle(draft),
+        overlap: 0
+      }];
+      (conflict.existingIds || []).forEach(function (id) {
+        var cls = State.classById(id);
+        if (!cls) return;
+        var d2 = cls.duration || 60;
+        cards.push({
+          kind: 'existing',
+          id: cls.id,
+          time: Domain.formatTimeRange(cls.time, d2),
+          who: Services.classDisplayTitle(cls),
+          overlap: Domain.overlapMinutes(start, dur, Domain.timeToMinutes(cls.time), d2)
+        });
+      });
+      return cards;
+    },
+    /**
+     * Оставить одно занятие из накладки, остальные убрать.
+     * keepId === null означает «оставить переносимое».
+     */
+    keepOnlyFromConflict(conflict, keepId) {
+      if (!conflict) return;
+      if (keepId === null) {
+        conflict.existingIds.forEach(function (id) { Services.deleteClass(id); });
+        State.classes.push(conflict.draft);
+        Services.syncAbonementsForClass(conflict.draft, []);
+      } else {
+        conflict.existingIds.forEach(function (id) {
+          if (id !== keepId) Services.deleteClass(id);
+        });
+      }
+      State.persist();
+    },
     /** Готовит копию занятия на новую дату (в расписание пока не кладёт) */
     buildWeekCopy(cls, newDate) {
       // Клонируем целиком, чтобы не потерять поля, которые появятся позже
@@ -5106,8 +5203,39 @@
         if (mItem) mItem.scrollIntoView({ block: 'center' });
       }, 30);
     },
-    openModal(id) { this.$(id).classList.add('show'); },
-    closeModal(id) { this.$(id).classList.remove('show'); },
+    /* —— Открытые окна и системная кнопка «назад» ——
+       В приложении «назад» должна закрывать верхнее окно. Раньше она
+       сворачивала приложение целиком: браузер не знал, что открыто окно,
+       и уходил назад по истории. Теперь на каждое окно добавляется шаг
+       истории, и «назад» просто снимает его. */
+    _modalStack: [],
+    openModal(id) {
+      var el = this.$(id);
+      if (!el || el.classList.contains('show')) return;
+      el.classList.add('show');
+      this._modalStack.push(id);
+      try { history.pushState({ dtModal: id }, ''); } catch (e) {}
+    },
+    closeModal(id) {
+      var el = this.$(id);
+      if (!el || !el.classList.contains('show')) return;
+      el.classList.remove('show');
+      var at = this._modalStack.lastIndexOf(id);
+      if (at !== -1) {
+        this._modalStack.splice(at, 1);
+        // Снимаем шаг истории, который добавляли при открытии
+        if (!UI._backInProgress) { try { history.back(); } catch (e) {} }
+      }
+    },
+    /** Закрыть верхнее открытое окно. Вернёт false, если закрывать нечего. */
+    closeTopModal() {
+      var id = this._modalStack[this._modalStack.length - 1];
+      if (!id) return false;
+      UI._backInProgress = true;
+      this.closeModal(id);
+      UI._backInProgress = false;
+      return true;
+    },
     applyTheme() {
       var s = State.settings;
       var themeName = s.theme || (s.dark ? 'dark' : 'light');
@@ -5294,6 +5422,41 @@
       } else {
         container.innerHTML = grid + UI.renderDayTotal(State.selectedDate);
       }
+    },
+    /**
+     * Показать одну накладку и дождаться выбора.
+     * Ответ: id занятия, которое оставить, 'all' — оставить все,
+     * null — пропустить. Переносимое занятие обозначается id === '__new'.
+     */
+    askConflict(conflict, index, total) {
+      var cards = Services.conflictCards(conflict);
+      UI.$('conflictStep').textContent = 'Накладка ' + (index + 1) + ' из ' + total;
+      UI.$('conflictWhen').textContent = Domain.formatDisplayDate(conflict.draft.date);
+
+      UI.$('conflictCards').innerHTML = cards.map(function (c, i) {
+        var over = c.overlap
+          ? '<div class="conflict-card-over">пересечение ' + c.overlap + ' мин</div>'
+          : '';
+        var sep = i === 1 ? '<div class="conflict-sep">уже стоит</div>' : '';
+        return sep +
+          '<button type="button" class="conflict-card' + (c.kind === 'new' ? ' is-new' : '') +
+            '" data-action="conflict-pick" data-pick="' + (c.id || '__new') + '">' +
+            '<span class="conflict-card-tag">' + (c.kind === 'new' ? 'переносим' : 'на этом месте') + '</span>' +
+            '<div class="conflict-card-time">' + c.time + '</div>' +
+            '<div class="conflict-card-who">' + Domain.escapeHtml(c.who) + '</div>' +
+            over +
+          '</button>';
+      }).join('');
+
+      UI.openModal('conflictModal');
+      return new Promise(function (resolve) { UI._conflictResolve = resolve; });
+    },
+    /** Закрыть окно накладки с ответом (ровно один раз) */
+    closeConflict(answer) {
+      var done = UI._conflictResolve;
+      UI._conflictResolve = null;
+      UI.closeModal('conflictModal');
+      if (done) done(answer);
     },
     /** Плашка «итог дня» под сеткой */
     renderDayTotal(dateStr) {
@@ -5956,6 +6119,9 @@
       switch (action) {
 
         /* —— РАСПИСАНИЕ И ЗАНЯТИЯ —— */
+        case 'conflict-pick': UI.closeConflict(el.dataset.pick); break;
+        case 'conflict-keep-all': UI.closeConflict('all'); break;
+        case 'conflict-skip': UI.closeConflict(null); break;
         case 'week-prev': Controllers.onWeekChange(-1); break;
         case 'week-next': Controllers.onWeekChange(1); break;
         case 'select-day': Controllers.onSelectDay(el.dataset.date); break;
@@ -6381,10 +6547,12 @@
       UI.renderSchedule();
     },
     /**
-     * Проводит тренера по конфликтам копирования — по одному за раз.
+     * Проводит тренера по накладкам — по одной за раз.
      *
-     * Конфликт здесь ровно один: в это время на новой неделе уже стоит ДРУГОЕ
-     * занятие. Одинаковые занятия конфликтом не считаются и сюда не попадают.
+     * Накладка здесь ровно одна: в это время на новой неделе стоит ДРУГОЕ
+     * занятие. Одинаковые занятия сюда не попадают. На каждой показываем
+     * карточки: что переносим и что уже стоит, с указанием, на сколько
+     * минут они пересекаются. Тренер нажимает на то, которое оставить.
      */
     resolveCopyConflicts(res, index) {
       var i = index || 0;
@@ -6395,27 +6563,21 @@
         UI.renderClients();
         var parts = ['Скопировано: ' + res.copied];
         if (res.already) parts.push('уже было: ' + res.already);
-        if (list.length) parts.push('разобрано накладок: ' + list.length);
+        if (list.length) parts.push('накладок: ' + list.length);
         UI.showToast(parts.join(', '));
         return Promise.resolve();
       }
 
       var c = list[i];
-      // Возвращаем промис: так вызывающий код (и тесты) знает, когда разбор окончен
-      return UI.ask({
-        icon: '⏱',
-        title: 'Накладка ' + (i + 1) + ' из ' + list.length,
-        text: c.newWhen + '\n\nПереносим: ' + c.newTitle +
-          '\nУже стоит: ' + c.existingTitles.join('; ') +
-          '\n\nЧто оставить?',
-        cancelText: 'Пропустить',
-        choices: [
-          { value: 'keep', label: 'Оставить то, что стоит' },
-          { value: 'replace', label: 'Заменить копией', danger: true },
-          { value: 'both', label: 'Оставить оба' }
-        ]
-      }).then(function (choice) {
-        if (choice) Services.resolveCopyConflict(c, choice);
+      return UI.askConflict(c, i, list.length).then(function (answer) {
+        if (answer === 'all') {
+          Services.resolveCopyConflict(c, 'both');
+        } else if (answer === '__new') {
+          Services.keepOnlyFromConflict(c, null);
+        } else if (answer) {
+          Services.keepOnlyFromConflict(c, answer);
+        }
+        // null — пропустили: расписание не трогаем
         UI.renderSchedule();
         return Controllers.resolveCopyConflicts(res, i + 1);
       });
@@ -7436,6 +7598,31 @@
         UI.showToast('Сбой: ' + ((e.reason && e.reason.message) || 'операция прервана'));
       } catch (err) {}
     });
+
+    /* Системная кнопка «назад»: закрываем верхнее окно, а не приложение */
+    window.addEventListener('popstate', function () {
+      if (UI.$('askModal') && UI.$('askModal').classList.contains('show')) {
+        UI._closeAsk(false);
+        return;
+      }
+      // Окно накладки закрываем через свой метод, иначе обход зависнет
+      if (UI.$('conflictModal') && UI.$('conflictModal').classList.contains('show')) {
+        UI._backInProgress = true;
+        UI.closeConflict(null);
+        UI._backInProgress = false;
+        return;
+      }
+      UI.closeTopModal();
+    });
+
+    /* Нажатие мимо окна накладки — то же, что «Пропустить» */
+    (function wireConflict() {
+      var overlay = UI.$('conflictModal');
+      if (!overlay) return;
+      overlay.addEventListener('click', function (e) {
+        if (e.target === overlay) UI.closeConflict(null);
+      });
+    })();
 
     /* Кнопки своего диалога */
     (function wireAsk() {
