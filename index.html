@@ -798,6 +798,37 @@
     #ccSheet { z-index: 650; }
     #contactsPickModal .modal { max-height: 86vh; }
     .modal-overlay.show { display: flex; }
+    /* Свой диалог: спрашиваем и предупреждаем в стилистике приложения,
+       а не системным окном браузера с чужими шрифтами и кнопками. */
+    #askModal { z-index: 800; align-items: center; padding: 24px; }
+    .ask-modal {
+      border-radius: 22px; max-width: 380px;
+      padding: 24px max(20px, var(--sal)) 20px max(20px, var(--sar));
+      text-align: center; box-shadow: 0 18px 50px rgba(0,0,0,0.32);
+    }
+    .ask-icon { font-size: 2rem; line-height: 1; margin-bottom: 10px; }
+    .ask-title { font-size: 1.05rem; font-weight: 700; color: var(--text); margin-bottom: 8px; }
+    .ask-text {
+      font-size: 0.88rem; color: var(--text-muted); line-height: 1.45;
+      white-space: pre-line; margin-bottom: 18px;
+    }
+    .ask-text:empty { margin-bottom: 8px; }
+    .ask-list {
+      text-align: left; margin: 0 0 18px; padding: 12px 14px;
+      background: var(--primary-light); border-radius: 14px;
+      max-height: 40vh; overflow-y: auto;
+    }
+    .ask-list-item {
+      font-size: 0.82rem; color: var(--text); line-height: 1.4;
+      padding: 7px 0; border-bottom: 1px solid var(--border);
+    }
+    .ask-list-item:last-child { border-bottom: none; }
+    .ask-list-when { font-weight: 700; }
+    .ask-list-what { color: var(--text-muted); }
+    .ask-actions { display: flex; gap: 10px; }
+    .ask-actions .btn { flex: 1; }
+    .ask-actions .btn.hidden { display: none; }
+    #askModal.danger .btn-primary { background: var(--danger); }
     .modal {
       background: var(--card); border-radius: 24px 24px 0 0;
       /* без этого прокручиваемое содержимое рисуется поверх скруглённых углов */
@@ -1906,6 +1937,22 @@
 
   </div><!-- /appShell -->
 
+  <!-- Свой диалог вместо браузерного confirm/alert/prompt -->
+  <div class="modal-overlay" id="askModal">
+    <div class="modal ask-modal">
+      <div class="ask-icon" id="askIcon">❓</div>
+      <div class="ask-title" id="askTitle"></div>
+      <div class="ask-text" id="askText"></div>
+      <div class="form-group hidden" id="askInputRow">
+        <textarea id="askInput" rows="5" placeholder=""></textarea>
+      </div>
+      <div class="ask-actions">
+        <button type="button" class="btn btn-secondary" id="askCancel">Отмена</button>
+        <button type="button" class="btn btn-primary" id="askOk">Продолжить</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="ccSheet">
     <div class="modal">
       <div class="modal-header">
@@ -1932,7 +1979,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-13 · 36',
+    BUILD: '2026-08-13 · 37',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -3959,13 +4006,27 @@
         var d = new Date(c.date + 'T12:00:00');
         return d >= prevMon && d <= prevSun;
       });
-      var copied = 0, skipped = 0;
+      /* Копируем неделю ЦЕЛИКОМ, ничего не пропуская.
+         Раньше занятие с пересечением по времени молча не копировалось —
+         человек видел «пропущено 2» и шёл сравнивать две недели вручную,
+         гадая, что именно потерялось. Теперь переносится всё как было,
+         а список пересечений показывается отдельно: где конфликт, видно
+         сразу, и тренер сам решает, что двигать. */
+      var copied = 0;
+      var conflicts = [];
       prev.forEach(function (cls) {
         var newDate = Domain.formatDate(Domain.addDays(new Date(cls.date + 'T12:00:00'), 7));
         var overlaps = Domain.findOverlaps(State.classes, newDate, cls.time, cls.duration || 60, null);
         if (overlaps.length) {
-          skipped++;
-          return;
+          conflicts.push({
+            date: newDate,
+            time: cls.time,
+            duration: cls.duration || 60,
+            title: Services.classDisplayTitle(cls),
+            withTitles: overlaps.map(function (o) {
+              return Services.classDisplayTitle(o) + ' ' + Domain.formatTimeRange(o.time, o.duration || 60);
+            })
+          });
         }
         var payments = {};
         (cls.clientIds || []).forEach(function (id) { payments[id] = false; });
@@ -3985,7 +4046,21 @@
         copied++;
       });
       State.persist();
-      return { copied: copied, skipped: skipped, total: prev.length };
+      return { copied: copied, conflicts: conflicts, total: prev.length };
+    },
+    /** Как занятие называется на экране: своё имя, группа клуба или имена участников */
+    classDisplayTitle(cls) {
+      if (!cls) return 'Занятие';
+      if (cls.title) return cls.title;
+      if (cls.clubGroupId) {
+        var g = State.clubGroupById(cls.clubGroupId);
+        if (g && g.name) return g.name;
+      }
+      var names = (cls.clientIds || []).map(function (cid) {
+        var c = State.clientById(cid);
+        return c ? c.name : null;
+      }).filter(Boolean);
+      return names.length ? names.join(', ') : 'Занятие';
     },
     updateSettings(partial) {
       Object.assign(State.settings, partial);
@@ -4626,6 +4701,86 @@
    * ========================================================= */
   const UI = {
     $(id) { return document.getElementById(id); },
+    /* —— Свои диалоги ——
+       Браузерные confirm/alert/prompt выглядят чужеродно: системный шрифт,
+       кнопки другой формы, в WebView вообще всплывает «страница сообщает».
+       Эти три метода делают то же самое, но окном приложения. Все они
+       возвращают Promise, потому что ждать ответа синхронно нельзя. */
+    _askResolve: null,
+    _closeAsk(value) {
+      var modal = this.$('askModal');
+      if (modal) { modal.classList.remove('show', 'danger'); }
+      document.body.style.overflow = '';
+      var done = UI._askResolve;
+      UI._askResolve = null;
+      if (done) done(value);
+    },
+    /**
+     * Спросить «да / нет».
+     * @param {{title, text, list, okText, cancelText, danger, icon, input, placeholder}} opts
+     * @returns {Promise<boolean|string|null>} для input — введённый текст или null
+     */
+    ask(opts) {
+      var o = opts || {};
+      var modal = this.$('askModal');
+      if (!modal) {
+        // Диалога нет в разметке — не молчим, а падаем обратно на браузерный
+        return Promise.resolve(o.input ? window.prompt(o.title) : window.confirm(o.title));
+      }
+      if (UI._askResolve) UI._closeAsk(o.input ? null : false);
+
+      this.$('askIcon').textContent = o.icon || (o.danger ? '⚠️' : '❓');
+      this.$('askTitle').textContent = o.title || '';
+      var textEl = this.$('askText');
+      textEl.innerHTML = '';
+      if (o.text) textEl.textContent = o.text;
+      if (o.list && o.list.length) {
+        textEl.insertAdjacentHTML('beforeend',
+          (o.text ? '<div style="height:12px"></div>' : '') +
+          '<div class="ask-list">' + o.list.map(function (row) {
+            return '<div class="ask-list-item">' +
+              '<span class="ask-list-when">' + Domain.escapeHtml(row.when || '') + '</span>' +
+              (row.what ? ' <span class="ask-list-what">' + Domain.escapeHtml(row.what) + '</span>' : '') +
+            '</div>';
+          }).join('') + '</div>');
+      }
+
+      var inputRow = this.$('askInputRow');
+      var input = this.$('askInput');
+      inputRow.classList.toggle('hidden', !o.input);
+      if (o.input) {
+        input.value = '';
+        input.placeholder = o.placeholder || '';
+      }
+
+      var ok = this.$('askOk');
+      var cancel = this.$('askCancel');
+      ok.textContent = o.okText || (o.input ? 'Добавить' : 'Продолжить');
+      cancel.textContent = o.cancelText || 'Отмена';
+      cancel.classList.toggle('hidden', o.alert === true);
+      if (o.danger) modal.classList.add('danger');
+
+      modal.classList.add('show');
+      document.body.style.overflow = 'hidden';
+      if (o.input) setTimeout(function () { input.focus(); }, 60);
+
+      return new Promise(function (resolve) { UI._askResolve = resolve; });
+    },
+    /** Сообщение с одной кнопкой */
+    notify(opts) {
+      var o = typeof opts === 'string' ? { title: opts } : (opts || {});
+      o.alert = true;
+      o.okText = o.okText || 'Понятно';
+      o.icon = o.icon || 'ℹ️';
+      return this.ask(o);
+    },
+    /** Спросить текст. Возвращает строку или null, если отменили. */
+    askText(opts) {
+      var o = opts || {};
+      o.input = true;
+      o.icon = o.icon || '✍️';
+      return this.ask(o);
+    },
     showToast(msg) {
       var t = this.$('toast');
       if (!t) return;
@@ -5676,12 +5831,38 @@
             return d >= prevMon && d <= prevSun;
           }).length;
           if (!count) { UI.showToast('В прошлой неделе нет занятий'); break; }
-          if (!confirm('Скопировать ' + count + ' занятий с прошлой недели?\nЗанятия с пересечением по времени будут пропущены.')) break;
-          var res = Services.copyPreviousWeek(State.currentWeekStart);
-          UI.renderSchedule();
-          var msg = 'Скопировано: ' + res.copied;
-          if (res.skipped) msg += ', пропущено (пересечение): ' + res.skipped;
-          UI.showToast(msg);
+          UI.ask({
+            icon: '📋',
+            title: 'Скопировать прошлую неделю?',
+            text: 'Перенесётся ' + count + ' ' +
+              UI.plural(count, 'занятие', 'занятия', 'занятий') +
+              ' — всё в точности как было. Оплаты не переносятся.',
+            okText: 'Скопировать'
+          }).then(function (yes) {
+            if (!yes) return;
+            var res = Services.copyPreviousWeek(State.currentWeekStart);
+            UI.renderSchedule();
+            if (!res.conflicts.length) {
+              UI.showToast('Скопировано занятий: ' + res.copied);
+              return;
+            }
+            /* Ничего не пропущено — просто показываем, где занятия наложились,
+               чтобы тренер сам решил, что подвинуть. */
+            UI.notify({
+              icon: '⏱',
+              title: 'Скопировано, но есть накладки',
+              text: 'Перенеслись все ' + res.copied + '. В ' + res.conflicts.length + ' ' +
+                UI.plural(res.conflicts.length, 'случае', 'случаях', 'случаях') +
+                ' время пересекается — поправьте вручную:',
+              list: res.conflicts.map(function (c) {
+                return {
+                  when: Domain.formatDisplayDate(c.date) + ', ' +
+                    Domain.formatTimeRange(c.time, c.duration),
+                  what: c.title + ' ↔ ' + c.withTitles.join('; ')
+                };
+              })
+            });
+          });
           break;
         }
         case 'clear-day': Controllers.onClearDay(); break;
@@ -5757,16 +5938,24 @@
         case 'abon-clear': {
           var cid2 = UI.$('clientId').value;
           if (!cid2) break;
-          if (!confirm('Сбросить абонемент клиента?\n\nОплаты, проставленные этим абонементом, тоже снимутся.')) break;
-          var clearedN = Services.clearAbonement(cid2);
-          var client2 = State.clientById(cid2);
-          UI.renderAbonementInfo(client2);
-          UI.renderClients();
-          UI.renderSchedule();
-          if (State.currentDetailClassId) {
-            var dcl = State.classById(State.currentDetailClassId);
-            if (dcl) UI.renderClassDetail(dcl);
-          }
+          UI.ask({
+            danger: true,
+            title: 'Сбросить абонемент?',
+            text: 'Снимутся оплаты, проставленные этим абонементом, и продажа уйдёт из отчёта. Оплаты наличными останутся.',
+            okText: 'Сбросить'
+          }).then(function (yes) {
+            if (!yes) return;
+            var clearedN = Services.clearAbonement(cid2);
+            var client2 = State.clientById(cid2);
+            UI.renderAbonementInfo(client2);
+            UI.renderClients();
+            UI.renderSchedule();
+            if (State.currentDetailClassId) {
+              var dcl = State.classById(State.currentDetailClassId);
+              if (dcl) UI.renderClassDetail(dcl);
+            }
+            UI.showToast(clearedN ? ('Абонемент сброшен, снято оплат: ' + clearedN) : 'Абонемент сброшен');
+          });
           UI.showToast(clearedN
             ? 'Абонемент сброшен · снято оплат: ' + clearedN
             : 'Абонемент сброшен');
@@ -5795,27 +5984,38 @@
         case 'income-open': Controllers.openIncomeModal(el.dataset.id); break;
         case 'abon-sale-delete': {
           var saleName = el.querySelector('.detail-name');
-          if (!confirm('Убрать продажу абонемента из отчёта?\n' +
-              (saleName ? saleName.textContent : '') +
-              '\n\nСам абонемент клиента при этом не меняется.')) break;
-          if (Services.deleteAbonementSale(el.dataset.id)) {
-            UI.closeModal('moneyDetailModal');
-            UI.renderClients();
-            UI.showToast('Продажа убрана из отчёта');
-          }
+          var saleId = el.dataset.id;
+          UI.ask({
+            danger: true,
+            icon: '🎟',
+            title: 'Убрать продажу из отчёта?',
+            text: (saleName ? saleName.textContent + '\n\n' : '') +
+              'Сам абонемент клиента при этом не меняется.',
+            okText: 'Убрать'
+          }).then(function (yes) {
+            if (!yes) return;
+            if (Services.deleteAbonementSale(saleId)) {
+              UI.closeModal('moneyDetailModal');
+              UI.renderClients();
+              UI.showToast('Продажа убрана из отчёта');
+            }
+          });
           break;
         }
         case 'income-delete': {
           var incId = UI.$('incomeId').value;
           if (!incId) break;
-          if (!confirm('Удалить эту запись о доходе?')) break;
-          Services.deleteIncome(incId);
-          UI.closeModal('incomeModal');
-          UI.renderClients();
-          UI.renderSchedule();
-          var det = document.getElementById('moneyDetailModal');
-          if (det && det.classList.contains('show')) UI.renderMoneyDetail();
-          UI.showToast('Удалено');
+          UI.ask({ danger: true, title: 'Удалить запись о доходе?', okText: 'Удалить' })
+            .then(function (yes) {
+              if (!yes) return;
+              Services.deleteIncome(incId);
+              UI.closeModal('incomeModal');
+              UI.renderClients();
+              UI.renderSchedule();
+              var det = document.getElementById('moneyDetailModal');
+              if (det && det.classList.contains('show')) UI.renderMoneyDetail();
+              UI.showToast('Удалено');
+            });
           break;
         }
 
@@ -5917,12 +6117,18 @@
           if (hint) hint.textContent = 'ClientID сохранён ✓';
           break;
         }
-        case 'logout':
-          if (!confirm('Выйти из аккаунта? Данные в облаке (Яндекс.Диск) сохранятся.')) break;
-          Auth.logout();
-          showAuthGate('login');
-          UI.showToast('Вы вышли');
+        case 'logout': {
+          UI.ask({
+            icon: '👋', title: 'Выйти из аккаунта?',
+            text: 'Данные в облаке (Яндекс.Диск) сохранятся.', okText: 'Выйти'
+          }).then(function (yes) {
+            if (!yes) return;
+            Auth.logout();
+            showAuthGate('login');
+            UI.showToast('Вы вышли');
+          });
           break;
+        }
         case 'open-auth':
           UI.$('authName').value = (State.currentUser && State.currentUser.name) || State.settings.profileName || '';
           UI.$('authPhone').value = (State.currentUser && State.currentUser.login) || State.settings.profilePhone || '';
@@ -5963,10 +6169,16 @@
               UI.showToast('На этом устройстве нет данных — отправлять нечего');
               return;
             }
-            if (!confirm('Отправить данные с этого устройства в облако?\n\n' +
-                'Здесь сейчас ' + n + ' записей (клиентов ' + State.clients.length +
-                ', занятий ' + State.classes.length + ').\n' +
-                'То, что лежит в облаке, будет заменено.')) return;
+            var okPush = await UI.ask({
+              danger: true,
+              icon: '☁',
+              title: 'Отправить данные в облако?',
+              text: 'Здесь сейчас ' + n + ' записей: клиентов ' + State.clients.length +
+                ', занятий ' + State.classes.length + '.\n\n' +
+                'То, что лежит в облаке, будет заменено.',
+              okText: 'Отправить'
+            });
+            if (!okPush) return;
             UI.showToast('Отправляю…');
             var res = await Cloud.pushNow();
             if (res.ok) {
@@ -6026,10 +6238,19 @@
     onClearDay() {
       var n = State.classes.filter(function (c) { return c.date === State.selectedDate; }).length;
       if (!n) { UI.showToast('Нет занятий'); return; }
-      if (!confirm('Удалить все занятия за ' + Domain.formatDisplayDate(State.selectedDate) + ' (' + n + ')?')) return;
-      Services.clearDay(State.selectedDate);
-      UI.renderSchedule();
-      UI.showToast('День очищен');
+      UI.ask({
+        danger: true,
+        icon: '🗑',
+        title: 'Очистить день?',
+        text: Domain.formatDisplayDate(State.selectedDate) + ' — удалится ' + n + ' ' +
+          UI.plural(n, 'занятие', 'занятия', 'занятий') + '. Отменить не получится.',
+        okText: 'Удалить'
+      }).then(function (yes) {
+        if (!yes) return;
+        Services.clearDay(State.selectedDate);
+        UI.renderSchedule();
+        UI.showToast('День очищен');
+      });
     },
     openClientModal(id) {
       var client = id ? State.clientById(id) : null;
@@ -6056,13 +6277,28 @@
           var samePhone = phoneN && c.phone && Domain.normalizePhone(c.phone) === phoneN;
           return sameName || samePhone;
         });
-        if (dup && !confirm('Похожий клиент уже есть. Всё равно сохранить?')) return;
+        if (dup) {
+          UI.ask({
+            icon: '👥', title: 'Похожий клиент уже есть',
+            text: 'Всё равно сохранить как отдельного?', okText: 'Сохранить'
+          }).then(function (yes) { if (yes) Controllers._saveClientConfirmed(payload, id); });
+          return;
+        }
+      } else if (Services.clientExists(payload.name.trim(), payload.phone)) {
+        UI.ask({
+          icon: '👥', title: 'Такой клиент уже есть',
+          text: 'Совпадает имя или телефон. Добавить ещё одного?', okText: 'Добавить'
+        }).then(function (yes) { if (yes) Controllers._saveClientConfirmed(payload, id); });
+        return;
+      }
+      Controllers._saveClientConfirmed(payload, id);
+    },
+    /** Сохранение после всех подтверждений */
+    _saveClientConfirmed(payload, id) {
+      if (id) {
         Services.updateClient(id, payload);
         UI.showToast('Клиент обновлён');
       } else {
-        if (Services.clientExists(payload.name.trim(), payload.phone)) {
-          if (!confirm('Клиент с таким именем или телефоном уже есть. Добавить всё равно?')) return;
-        }
         Services.createClient(payload);
         UI.showToast('Клиент добавлен');
       }
@@ -6071,7 +6307,21 @@
     },
     deleteClient() {
       var id = UI.$('clientId').value;
-      if (!id || !confirm('Удалить клиента?')) return;
+      if (!id) return;
+      var clientToDelete = State.clientById(id);
+      UI.ask({
+        danger: true,
+        icon: '🗑',
+        title: 'Удалить клиента?',
+        text: (clientToDelete ? clientToDelete.name + '\n\n' : '') +
+          'Занятия останутся в расписании, но участник из них пропадёт.',
+        okText: 'Удалить'
+      }).then(function (yes) {
+        if (!yes) return;
+        Controllers._deleteClientConfirmed(id);
+      });
+    },
+    _deleteClientConfirmed(id) {
       Services.deleteClient(id);
       UI.closeModal('clientModal');
       UI.renderClients();
@@ -6194,17 +6444,30 @@
         ? 'Сейчас открыт сайт в браузере, а не приложение.\n' +
           'Телефонную книгу браузер не отдаёт — список контактов доступен только в установленном приложении.\n\n'
         : 'Прямой доступ к телефонной книге на этом устройстве недоступен.\n\n';
-      var choice = confirm(
-        head +
-        'ОК — выбрать файл vCard/CSV из «Контакты»/Файлы.\n' +
-        'Отмена — вставить список имён текстом.'
-      );
+      UI.ask({
+        icon: '📇',
+        title: 'Как добавить контакты?',
+        text: head + 'Можно выбрать файл vCard/CSV из «Контактов» или вставить список имён текстом.',
+        okText: 'Выбрать файл',
+        cancelText: 'Вставить текстом'
+      }).then(function (choice) {
+        Controllers._contactsFallbackChoice(choice);
+      });
+    },
+    _contactsFallbackChoice(choice) {
       if (choice) {
         var inp = UI.$('contactsFileInput');
         if (inp) inp.click();
         return;
       }
-      var raw = prompt('Вставьте имена (каждое с новой строки). Можно «Имя, телефон»:');
+      UI.askText({
+        title: 'Вставьте список',
+        text: 'Каждое имя с новой строки. Можно «Имя, телефон».',
+        placeholder: 'Анна Иванова, +7 999 123-45-67\nПётр Смирнов',
+        okText: 'Добавить'
+      }).then(function (raw) { Controllers._addPastedContacts(raw); });
+    },
+    _addPastedContacts(raw) {
       if (!raw) return;
       var list = raw.split(/[\n;]+/).map(function (line) {
         line = line.trim();
@@ -6334,7 +6597,7 @@
         var msg = 'Время пересекается:\n';
         overlaps.forEach(function (o) { msg += '• ' + o.time + ' (' + (o.duration || 60) + ' мин)\n'; });
         msg += free.length ? '\nСвободно:\n' + free.slice(0, 8).join(', ') : '\nСвободных слотов нет';
-        alert(msg);
+        UI.notify({ icon: '🩺', title: 'Диагностика синхронизации', text: msg });
         return;
       }
       if (id) { Services.updateClass(id, data); UI.showToast('Обновлено'); }
@@ -6367,14 +6630,23 @@
         UI.showToast('Занятие не найдено — обновите экран');
         return;
       }
-      if (!confirm('Удалить занятие ' + Domain.formatDisplayDate(cls.date) +
-          ' в ' + cls.time + '?')) return;
-      Services.deleteClass(id);
-      State.currentDetailClassId = null;
-      UI.closeModal('classModal');
-      UI.closeModal('classDetailModal');
-      UI.renderSchedule();
-      UI.showToast('Удалено');
+      UI.ask({
+        danger: true,
+        icon: '🗑',
+        title: 'Удалить занятие?',
+        text: Services.classDisplayTitle(cls) + '\n' +
+          Domain.formatDisplayDate(cls.date) + ', ' +
+          Domain.formatTimeRange(cls.time, cls.duration || 60),
+        okText: 'Удалить'
+      }).then(function (yes) {
+        if (!yes) return;
+        Services.deleteClass(id);
+        State.currentDetailClassId = null;
+        UI.closeModal('classModal');
+        UI.closeModal('classDetailModal');
+        UI.renderSchedule();
+        UI.showToast('Удалено');
+      });
     },
     openClubMemberModal(id) {
       var m = id ? State.clubMemberById(id) : null;
@@ -6402,7 +6674,16 @@
     },
     deleteClubMember() {
       var id = UI.$('clubMemberId').value;
-      if (!id || !confirm('Удалить члена клуба?')) return;
+      if (!id) return;
+      var memberToDelete = State.clubMemberById(id);
+      UI.ask({
+        danger: true, icon: '🗑', title: 'Удалить члена клуба?',
+        text: memberToDelete ? memberToDelete.name : '', okText: 'Удалить'
+      }).then(function (yes) {
+        if (yes) Controllers._deleteClubMemberConfirmed(id);
+      });
+    },
+    _deleteClubMemberConfirmed(id) {
       Services.deleteClubMember(id);
       UI.closeModal('clubMemberModal');
       UI.renderClub();
@@ -6438,7 +6719,18 @@
     },
     deleteClubGroup() {
       var id = UI.$('clubGroupId').value || State.currentDetailGroupId;
-      if (!id || !confirm('Удалить группу?')) return;
+      if (!id) return;
+      var groupToDelete = State.clubGroupById(id);
+      UI.ask({
+        danger: true, icon: '🗑', title: 'Удалить группу?',
+        text: (groupToDelete ? groupToDelete.name + '\n\n' : '') +
+          'Участники останутся, но перестанут числиться в этой группе.',
+        okText: 'Удалить'
+      }).then(function (yes) {
+        if (yes) Controllers._deleteClubGroupConfirmed(id);
+      });
+    },
+    _deleteClubGroupConfirmed(id) {
       Services.deleteClubGroup(id);
       State.currentDetailGroupId = null;
       UI.closeModal('clubGroupModal');
@@ -6922,6 +7214,33 @@
       if (document.visibilityState === 'hidden') saveOnLeave();
     });
     window.addEventListener('pagehide', saveOnLeave);
+
+    /* Кнопки своего диалога */
+    (function wireAsk() {
+      var ok = UI.$('askOk');
+      var cancel = UI.$('askCancel');
+      var overlay = UI.$('askModal');
+      var input = UI.$('askInput');
+      if (!ok || !cancel || !overlay) return;
+
+      ok.addEventListener('click', function () {
+        var wantsText = !UI.$('askInputRow').classList.contains('hidden');
+        UI._closeAsk(wantsText ? (input.value || '') : true);
+      });
+      cancel.addEventListener('click', function () {
+        var wantsText = !UI.$('askInputRow').classList.contains('hidden');
+        UI._closeAsk(wantsText ? null : false);
+      });
+      overlay.addEventListener('click', function (e) {
+        // Нажатие мимо окна — это отказ
+        if (e.target === overlay) cancel.click();
+      });
+      document.addEventListener('keydown', function (e) {
+        if (!overlay.classList.contains('show')) return;
+        if (e.key === 'Escape') cancel.click();
+        if (e.key === 'Enter' && UI.$('askInputRow').classList.contains('hidden')) ok.click();
+      });
+    })();
 
     document.body.addEventListener('click', function (e) {
       var closer = e.target.closest('[data-close]');
