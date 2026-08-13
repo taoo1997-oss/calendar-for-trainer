@@ -1680,6 +1680,8 @@
         <button type="button" class="btn btn-danger btn-block btn-sm" data-action="export">📤 Экспорт данных</button>
         <button type="button" class="btn btn-secondary btn-block btn-sm mt-2" data-action="import-trigger">📥 Импорт данных</button>
         <input type="file" id="importFile" accept="application/json" class="hidden">
+        <button type="button" class="btn btn-secondary btn-block btn-sm mt-2" data-action="find-duplicates">🧹 Найти дубли занятий</button>
+        <p class="text-sm text-muted" style="margin-top:6px;font-size:0.7rem;">Одинаковые занятия в один день и час — например, после двойного копирования недели.</p>
       </div>
 
       <!-- Версия сборки — всегда в самом низу страницы -->
@@ -1979,7 +1981,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-13 · 37',
+    BUILD: '2026-08-13 · 38',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -4013,10 +4015,19 @@
          а список пересечений показывается отдельно: где конфликт, видно
          сразу, и тренер сам решает, что двигать. */
       var copied = 0;
+      var already = 0;
       var conflicts = [];
       prev.forEach(function (cls) {
         var newDate = Domain.formatDate(Domain.addDays(new Date(cls.date + 'T12:00:00'), 7));
-        var overlaps = Domain.findOverlaps(State.classes, newDate, cls.time, cls.duration || 60, null);
+
+        /* Такое занятие на этот день уже перенесено — второй раз не создаём
+           и накладкой не считаем. Иначе повторное нажатие «Копировать неделю»
+           плодило дубли и тут же жаловалось на пересечение занятия с самим
+           собой: «Игорь Зиновьев ↔ Игорь Зиновьев». */
+        if (Services.findSameClass(newDate, cls)) { already++; return; }
+
+        var overlaps = Domain.findOverlaps(State.classes, newDate, cls.time, cls.duration || 60, null)
+          .filter(function (o) { return !Services.isSameClass(o, cls); });
         if (overlaps.length) {
           conflicts.push({
             date: newDate,
@@ -4040,13 +4051,71 @@
         copy.isGroup = Domain.isGroupClass(cls);
         copy.clubGroupId = cls.clubGroupId || null;
         copy.duration = cls.duration || 60;
+        copy.price = Services.classPrice(cls);   // стоимость переносится, оплаты — нет
         copy.createdAt = new Date().toISOString();
         State.classes.push(copy);
         Services.syncAbonementsForClass(copy, []);
         copied++;
       });
       State.persist();
-      return { copied: copied, conflicts: conflicts, total: prev.length };
+      return { copied: copied, already: already, conflicts: conflicts, total: prev.length };
+    },
+    /** Два занятия — это одно и то же по сути (время, длительность, состав, название)? */
+    isSameClass(a, b) {
+      if (!a || !b) return false;
+      if (a.time !== b.time) return false;
+      if ((a.duration || 60) !== (b.duration || 60)) return false;
+      if ((a.title || '').trim() !== (b.title || '').trim()) return false;
+      if ((a.clubGroupId || null) !== (b.clubGroupId || null)) return false;
+      var idsA = (a.clientIds || []).slice().sort().join(',');
+      var idsB = (b.clientIds || []).slice().sort().join(',');
+      return idsA === idsB;
+    },
+    /** Есть ли на эту дату точно такое же занятие */
+    findSameClass(date, cls) {
+      return State.classes.find(function (x) {
+        return x.date === date && x.id !== cls.id && Services.isSameClass(x, cls);
+      }) || null;
+    },
+    /**
+     * Убрать точные дубли занятий: одинаковые день, время, длительность,
+     * название и состав. Остаётся первое, у которого больше отметок об оплате,
+     * чтобы не потерять уже проставленные деньги.
+     */
+    removeDuplicateClasses() {
+      var seen = {};
+      var toRemove = [];
+      State.classes.slice()
+        .sort(function (a, b) {
+          var pa = Object.keys(a.payments || {}).filter(function (k) { return a.payments[k]; }).length;
+          var pb = Object.keys(b.payments || {}).filter(function (k) { return b.payments[k]; }).length;
+          return pb - pa;
+        })
+        .forEach(function (cls) {
+          var key = [
+            cls.date, cls.time, cls.duration || 60, (cls.title || '').trim(),
+            cls.clubGroupId || '', (cls.clientIds || []).slice().sort().join(',')
+          ].join('|');
+          if (seen[key]) toRemove.push(cls.id);
+          else seen[key] = true;
+        });
+      toRemove.forEach(function (id) { Services.deleteClass(id); });
+      if (toRemove.length) State.persist();
+      return toRemove.length;
+    },
+    /** Сколько точных дублей найдётся, ничего не удаляя */
+    countDuplicateClasses() {
+      var seen = {};
+      var dupes = 0;
+      State.classes.forEach(function (cls) {
+        var key = [
+          cls.date, cls.time, cls.duration || 60, (cls.title || '').trim(),
+          cls.clubGroupId || '', (cls.clientIds || []).slice().sort().join(',')
+        ].join('|');
+        if (seen[key]) dupes++;
+        else seen[key] = true;
+      });
+      return dupes;
     },
     /** Как занятие называется на экране: своё имя, группа клуба или имена участников */
     classDisplayTitle(cls) {
@@ -5843,7 +5912,9 @@
             var res = Services.copyPreviousWeek(State.currentWeekStart);
             UI.renderSchedule();
             if (!res.conflicts.length) {
-              UI.showToast('Скопировано занятий: ' + res.copied);
+              UI.showToast(res.already
+                ? ('Скопировано: ' + res.copied + ', уже было: ' + res.already)
+                : ('Скопировано занятий: ' + res.copied));
               return;
             }
             /* Ничего не пропущено — просто показываем, где занятия наложились,
@@ -6213,6 +6284,26 @@
         case 'theme-pick': break;
         case 'set-color': Controllers.setPrimaryColor(el.dataset.color); break;
         case 'export': Controllers.exportData(); break;
+        case 'find-duplicates': {
+          var dupes = Services.countDuplicateClasses();
+          if (!dupes) { UI.notify({ icon: '✨', title: 'Дублей нет', text: 'Одинаковых занятий в расписании не найдено.' }); break; }
+          UI.ask({
+            danger: true,
+            icon: '🧹',
+            title: 'Убрать дубли?',
+            text: 'Найдено ' + dupes + ' ' + UI.plural(dupes, 'дубль', 'дубля', 'дублей') +
+              ': одинаковые день, время, состав и название.\n\n' +
+              'Останется по одному занятию — то, где больше отметок об оплате.',
+            okText: 'Убрать'
+          }).then(function (yes) {
+            if (!yes) return;
+            var removed = Services.removeDuplicateClasses();
+            UI.renderSchedule();
+            UI.renderClients();
+            UI.showToast('Удалено дублей: ' + removed);
+          });
+          break;
+        }
         case 'import-trigger': UI.$('importFile').click(); break;
       }
     },
@@ -6560,7 +6651,7 @@
       if (UI.$('classId')) UI.$('classId').value = cls ? cls.id : '';
       var priceEl = UI.$('classPrice');
       // Пустое поле у нового занятия — цену вводим каждый раз свою
-      if (priceEl) priceEl.value = (cls && cls.price) ? cls.price : '';
+      if (priceEl) priceEl.value = cls ? (Services.classPrice(cls) || '') : '';
       UI.updatePriceLabel();
       // Список клиентов всегда открываем свёрнутым — форма и так длинная
       var listEl = UI.$('classClientSelect');
@@ -6591,17 +6682,15 @@
         var cg = State.clubGroupById(clubGroupId);
         if (cg) data.title = cg.name;
       }
+      /* Наложение по времени больше не мешает сохранить.
+         Раньше здесь стояла стена: занятие не сохранялось, а вместо этого
+         показывался список свободных слотов. На перенесённой неделе это
+         превращалось в ловушку — открыл занятие, ничего не менял, а сохранить
+         нельзя, потому что рядом стоит его же копия. Расписание принадлежит
+         тренеру: накладку показываем, но решение оставляем ему. */
       var overlaps = Domain.findOverlaps(State.classes, data.date, data.time, data.duration, id || null);
-      if (overlaps.length) {
-        var free = Domain.findFreeSlots(State.classes, data.date, data.duration, id || null);
-        var msg = 'Время пересекается:\n';
-        overlaps.forEach(function (o) { msg += '• ' + o.time + ' (' + (o.duration || 60) + ' мин)\n'; });
-        msg += free.length ? '\nСвободно:\n' + free.slice(0, 8).join(', ') : '\nСвободных слотов нет';
-        UI.notify({ icon: '🩺', title: 'Диагностика синхронизации', text: msg });
-        return;
-      }
-      if (id) { Services.updateClass(id, data); UI.showToast('Обновлено'); }
-      else { Services.createClass(data); UI.showToast('Создано'); }
+      if (id) { Services.updateClass(id, data); UI.showToast(overlaps.length ? 'Сохранено · время пересекается' : 'Обновлено'); }
+      else { Services.createClass(data); UI.showToast(overlaps.length ? 'Создано · время пересекается' : 'Создано'); }
       State.selectedDate = data.date;
       State.currentWeekStart = Domain.getMonday(new Date(data.date + 'T12:00:00'));
       UI.closeModal('classModal');
