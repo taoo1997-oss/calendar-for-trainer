@@ -750,7 +750,6 @@
     }
     [data-cal-style="cards"] .time-class {
       position: relative !important;
-      width: auto !important;
       top: auto !important;
       left: auto !important;
       right: auto !important;
@@ -826,6 +825,8 @@
     .ask-list-item:last-child { border-bottom: none; }
     .ask-list-when { font-weight: 700; }
     .ask-list-what { color: var(--text-muted); }
+    .ask-choices { text-align: left; margin-bottom: 4px; }
+    .ask-choices.hidden { display: none; }
     .ask-actions { display: flex; gap: 10px; }
     .ask-actions .btn { flex: 1; }
     .ask-actions .btn.hidden { display: none; }
@@ -1681,9 +1682,8 @@
         <button type="button" class="btn btn-danger btn-block btn-sm" data-action="export">📤 Экспорт данных</button>
         <button type="button" class="btn btn-secondary btn-block btn-sm mt-2" data-action="import-trigger">📥 Импорт данных</button>
         <input type="file" id="importFile" accept="application/json" class="hidden">
-        <button type="button" class="btn btn-secondary btn-block btn-sm mt-2" data-action="find-duplicates">🧹 Найти дубли занятий</button>
-        <button type="button" class="btn btn-secondary btn-block btn-sm mt-2" data-action="undo-cleanup">↩️ Отменить последнюю уборку</button>
-        <p class="text-sm text-muted" style="margin-top:6px;font-size:0.7rem;">Одинаковые занятия в один день и час — например, после двойного копирования недели.</p>
+        <button type="button" class="btn btn-secondary btn-block btn-sm mt-2" data-action="undo-cleanup">↩️ Отменить последнее удаление</button>
+        <p class="text-sm text-muted" style="margin-top:6px;font-size:0.7rem;">Вернёт расписание к состоянию до очистки дня.</p>
       </div>
 
       <!-- Версия сборки — всегда в самом низу страницы -->
@@ -1950,6 +1950,7 @@
       <div class="form-group hidden" id="askInputRow">
         <textarea id="askInput" rows="5" placeholder=""></textarea>
       </div>
+      <div id="askChoices" class="ask-choices hidden"></div>
       <div class="ask-actions">
         <button type="button" class="btn btn-secondary" id="askCancel">Отмена</button>
         <button type="button" class="btn btn-primary" id="askOk">Продолжить</button>
@@ -1983,7 +1984,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-13 · 40',
+    BUILD: '2026-08-13 · 41',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -2140,45 +2141,6 @@
    * ========================================================= */
   const Domain = {
     uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); },
-    /**
-     * Раскладывает пересекающиеся занятия по колонкам.
-     *
-     * Сначала занятия собираются в «пачки»: соседние по времени, которые
-     * хоть как-то перекрываются. Внутри пачки каждому занятию достаётся
-     * первая свободная колонка. Ширина у всех в пачке одинаковая, поэтому
-     * три занятия в один час встанут тремя узкими карточками рядом.
-     *
-     * @returns {Array<{col:number,cols:number}>} по одной записи на занятие
-     */
-    layoutOverlaps(dayClasses) {
-      var result = dayClasses.map(function () { return { col: 0, cols: 1 }; });
-      var cluster = [];        // индексы занятий текущей пачки
-      var columnEnds = [];     // когда освобождается каждая колонка
-      var clusterEnd = -1;
-
-      function closeCluster() {
-        var cols = columnEnds.length || 1;
-        cluster.forEach(function (idx) { result[idx].cols = cols; });
-        cluster = [];
-        columnEnds = [];
-        clusterEnd = -1;
-      }
-
-      dayClasses.forEach(function (cls, i) {
-        var start = Domain.timeToMinutes(cls.time);
-        var end = start + (cls.duration || 60);
-        if (cluster.length && start >= clusterEnd) closeCluster();
-
-        var col = 0;
-        while (col < columnEnds.length && columnEnds[col] > start) col++;
-        columnEnds[col] = end;
-        result[i].col = col;
-        cluster.push(i);
-        if (end > clusterEnd) clusterEnd = end;
-      });
-      closeCluster();
-      return result;
-    },
     getMonday(d) {
       const date = new Date(d);
       const day = date.getDay();
@@ -4043,6 +4005,18 @@
       State.classes = State.classes.filter(function (c) { return c.date !== dateStr; });
       State.persist();
     },
+    /**
+     * Скопировать прошлую неделю на текущую.
+     *
+     * Что происходит с каждым занятием прошлой недели:
+     *   • такого занятия на новой неделе ещё нет  → копируется;
+     *   • точно такое же уже стоит (то же время и тот же состав) → пропускаем,
+     *     это не конфликт. Ира во вторник в 19:00 и Ира в следующий вторник
+     *     в 19:00 — одно и то же занятие, объединять нечего;
+     *   • в это время стоит ДРУГОЕ занятие → это конфликт. Копия не создаётся
+     *     сразу: она возвращается в списке conflicts, чтобы тренер сам решил,
+     *     что оставить.
+     */
     copyPreviousWeek(weekStart) {
       var prevMon = Domain.addDays(weekStart, -7);
       var prevSun = Domain.addDays(prevMon, 6);
@@ -4050,64 +4024,94 @@
         var d = new Date(c.date + 'T12:00:00');
         return d >= prevMon && d <= prevSun;
       });
-      /* Копируем неделю ЦЕЛИКОМ, ничего не пропуская.
-         Раньше занятие с пересечением по времени молча не копировалось —
-         человек видел «пропущено 2» и шёл сравнивать две недели вручную,
-         гадая, что именно потерялось. Теперь переносится всё как было,
-         а список пересечений показывается отдельно: где конфликт, видно
-         сразу, и тренер сам решает, что двигать. */
       var copied = 0;
       var already = 0;
       var conflicts = [];
+
       prev.forEach(function (cls) {
         var newDate = Domain.formatDate(Domain.addDays(new Date(cls.date + 'T12:00:00'), 7));
 
-        /* Такое занятие на этот день уже перенесено — второй раз не создаём
-           и накладкой не считаем. Иначе повторное нажатие «Копировать неделю»
-           плодило дубли и тут же жаловалось на пересечение занятия с самим
-           собой: «Игорь Зиновьев ↔ Игорь Зиновьев». */
         if (Services.findSameClass(newDate, cls)) { already++; return; }
 
         var overlaps = Domain.findOverlaps(State.classes, newDate, cls.time, cls.duration || 60, null)
           .filter(function (o) { return !Services.isSameClass(o, cls); });
+
         if (overlaps.length) {
           conflicts.push({
-            date: newDate,
-            time: cls.time,
-            duration: cls.duration || 60,
-            title: Services.classDisplayTitle(cls),
-            withTitles: overlaps.map(function (o) {
-              return Services.classDisplayTitle(o) + ' ' + Domain.formatTimeRange(o.time, o.duration || 60);
+            draft: Services.buildWeekCopy(cls, newDate),
+            existingIds: overlaps.map(function (o) { return o.id; }),
+            newTitle: Services.classDisplayTitle(cls),
+            newWhen: Domain.formatDisplayDate(newDate) + ', ' +
+              Domain.formatTimeRange(cls.time, cls.duration || 60),
+            existingTitles: overlaps.map(function (o) {
+              return Services.classDisplayTitle(o) + ' · ' +
+                Domain.formatTimeRange(o.time, o.duration || 60);
             })
           });
+          return;
         }
-        var payments = {};
-        (cls.clientIds || []).forEach(function (id) { payments[id] = false; });
-        // Клонируем занятие целиком, чтобы не терять поля (clubGroupId и любые
-        // новые, которые появятся позже). Меняем только то, что должно отличаться.
-        var copy = JSON.parse(JSON.stringify(cls));
-        copy.id = Domain.uid();
-        copy.date = newDate;
-        copy.clientIds = (cls.clientIds || []).slice();
-        copy.payments = payments;          // оплаты не переносим
-        copy.isGroup = Domain.isGroupClass(cls);
-        copy.clubGroupId = cls.clubGroupId || null;
-        copy.duration = cls.duration || 60;
-        copy.price = Services.classPrice(cls);   // стоимость переносится, оплаты — нет
-        copy.createdAt = new Date().toISOString();
-        State.classes.push(copy);
-        Services.syncAbonementsForClass(copy, []);
+
+        State.classes.push(Services.buildWeekCopy(cls, newDate));
+        Services.syncAbonementsForClass(State.classes[State.classes.length - 1], []);
         copied++;
       });
       State.persist();
       return { copied: copied, already: already, conflicts: conflicts, total: prev.length };
     },
+    /** Готовит копию занятия на новую дату (в расписание пока не кладёт) */
+    buildWeekCopy(cls, newDate) {
+      // Клонируем целиком, чтобы не потерять поля, которые появятся позже
+      var copy = JSON.parse(JSON.stringify(cls));
+      var payments = {};
+      (cls.clientIds || []).forEach(function (id) { payments[id] = false; });
+      copy.id = Domain.uid();
+      copy.date = newDate;
+      copy.clientIds = (cls.clientIds || []).slice();
+      copy.payments = payments;                 // оплаты не переносим
+      copy.isGroup = Domain.isGroupClass(cls);
+      copy.clubGroupId = cls.clubGroupId || null;
+      copy.duration = cls.duration || 60;
+      copy.price = Services.classPrice(cls);    // стоимость переносим
+      copy.createdAt = new Date().toISOString();
+      return copy;
+    },
+    /**
+     * Решение тренера по одному конфликту.
+     * 'keep'    — оставить то, что уже стоит, копию не создавать;
+     * 'replace' — убрать существующее и поставить копию;
+     * 'both'    — оставить оба занятия рядом.
+     */
+    resolveCopyConflict(conflict, choice) {
+      if (!conflict) return;
+      // 'keep' и отказ от выбора одинаковы: копию не создаём
+      if (choice !== 'replace' && choice !== 'both') return;
+      if (choice === 'replace') {
+        conflict.existingIds.forEach(function (id) { Services.deleteClass(id); });
+      }
+      State.classes.push(conflict.draft);
+      Services.syncAbonementsForClass(conflict.draft, []);
+      State.persist();
+    },
+    /** Два занятия — это одно и то же по сути (время, длительность, состав, название)? */
+    isSameClass(a, b) {
+      if (!a || !b) return false;
+      if (a.time !== b.time) return false;
+      if ((a.duration || 60) !== (b.duration || 60)) return false;
+      if ((a.title || '').trim() !== (b.title || '').trim()) return false;
+      if ((a.clubGroupId || null) !== (b.clubGroupId || null)) return false;
+      var idsA = (a.clientIds || []).slice().sort().join(',');
+      var idsB = (b.clientIds || []).slice().sort().join(',');
+      return idsA === idsB;
+    },
+    /** Есть ли на эту дату точно такое же занятие */
+    findSameClass(date, cls) {
+      return State.classes.find(function (x) {
+        return x.date === date && x.id !== cls.id && Services.isSameClass(x, cls);
+      }) || null;
+    },
     /* —— Снимок перед разрушительным действием ——
-
-       Кнопка «Найти дубли» удаляла занятия без возможности вернуть. Это была
-       моя ошибка: любое действие, которое стирает данные пачкой, обязано
-       иметь откат. Теперь перед такими операциями сохраняется полный снимок
-       расписания и клиентов, и его можно вернуть одним нажатием. */
+       Очистка дня стирает занятия пачкой. Чтобы это можно было отменить,
+       перед ней сохраняется полный снимок расписания, клиентов и доходов. */
     snapshotKey() { return State.dataKey() + '_undo'; },
     saveSnapshot(reason) {
       try {
@@ -4139,64 +4143,6 @@
       State.persist();
       try { Storage.saveKey(Services.snapshotKey(), null); } catch (e) {}
       return true;
-    },
-    /** Два занятия — это одно и то же по сути (время, длительность, состав, название)? */
-    isSameClass(a, b) {
-      if (!a || !b) return false;
-      if (a.time !== b.time) return false;
-      if ((a.duration || 60) !== (b.duration || 60)) return false;
-      if ((a.title || '').trim() !== (b.title || '').trim()) return false;
-      if ((a.clubGroupId || null) !== (b.clubGroupId || null)) return false;
-      var idsA = (a.clientIds || []).slice().sort().join(',');
-      var idsB = (b.clientIds || []).slice().sort().join(',');
-      return idsA === idsB;
-    },
-    /** Есть ли на эту дату точно такое же занятие */
-    findSameClass(date, cls) {
-      return State.classes.find(function (x) {
-        return x.date === date && x.id !== cls.id && Services.isSameClass(x, cls);
-      }) || null;
-    },
-    /**
-     * Убрать точные дубли занятий: одинаковые день, время, длительность,
-     * название и состав. Остаётся первое, у которого больше отметок об оплате,
-     * чтобы не потерять уже проставленные деньги.
-     */
-    removeDuplicateClasses() {
-      var seen = {};
-      var toRemove = [];
-      State.classes.slice()
-        .sort(function (a, b) {
-          var pa = Object.keys(a.payments || {}).filter(function (k) { return a.payments[k]; }).length;
-          var pb = Object.keys(b.payments || {}).filter(function (k) { return b.payments[k]; }).length;
-          return pb - pa;
-        })
-        .forEach(function (cls) {
-          var key = [
-            cls.date, cls.time, cls.duration || 60, (cls.title || '').trim(),
-            cls.clubGroupId || '', (cls.clientIds || []).slice().sort().join(',')
-          ].join('|');
-          if (seen[key]) toRemove.push(cls.id);
-          else seen[key] = true;
-        });
-      if (toRemove.length) Services.saveSnapshot('уборка дублей');
-      toRemove.forEach(function (id) { Services.deleteClass(id); });
-      if (toRemove.length) State.persist();
-      return toRemove.length;
-    },
-    /** Сколько точных дублей найдётся, ничего не удаляя */
-    countDuplicateClasses() {
-      var seen = {};
-      var dupes = 0;
-      State.classes.forEach(function (cls) {
-        var key = [
-          cls.date, cls.time, cls.duration || 60, (cls.title || '').trim(),
-          cls.clubGroupId || '', (cls.clientIds || []).slice().sort().join(',')
-        ].join('|');
-        if (seen[key]) dupes++;
-        else seen[key] = true;
-      });
-      return dupes;
     },
     /** Как занятие называется на экране: своё имя, группа клуба или имена участников */
     classDisplayTitle(cls) {
@@ -4905,7 +4851,28 @@
 
       var ok = this.$('askOk');
       var cancel = this.$('askCancel');
-      ok.textContent = o.okText || (o.input ? 'Добавить' : 'Продолжить');
+      var extra = this.$('askChoices');
+      extra.innerHTML = '';
+      if (o.choices && o.choices.length) {
+        /* Вопрос «что оставить» не помещается в да/нет: вариантов больше двух,
+           и у каждого своё название. Тогда вместо двух кнопок рисуем список. */
+        extra.classList.remove('hidden');
+        ok.classList.add('hidden');
+        cancel.textContent = o.cancelText || 'Отмена';
+        o.choices.forEach(function (ch) {
+          var b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'btn btn-block ' + (ch.danger ? 'btn-danger' : 'btn-secondary');
+          b.style.marginBottom = '8px';
+          b.textContent = ch.label;
+          b.addEventListener('click', function () { UI._closeAsk(ch.value); });
+          extra.appendChild(b);
+        });
+      } else {
+        extra.classList.add('hidden');
+        ok.classList.remove('hidden');
+        ok.textContent = o.okText || (o.input ? 'Добавить' : 'Продолжить');
+      }
       cancel.textContent = o.cancelText || 'Отмена';
       cancel.classList.toggle('hidden', o.alert === true);
       if (o.danger) modal.classList.add('danger');
@@ -5287,14 +5254,8 @@
       for (var h = startH; h <= endH; h++) {
         grid += '<div class="time-slot"><div class="time-label">' + String(h).padStart(2, '0') + ':00</div><div class="time-content"></div></div>';
       }
-      /* Занятия, наложенные по времени, ставим рядом колонками.
-         Раньше карточки рисовались на всю ширину одна поверх другой, и из трёх
-         занятий в 18:00 было видно только одно — выглядело так, будто остальные
-         пропали. Данные при этом были на месте, их просто закрывало сверху. */
-      var layout = Domain.layoutOverlaps(dayClasses);
-
       grid += '<div class="time-events">';
-      dayClasses.forEach(function (cls, i) {
+      dayClasses.forEach(function (cls) {
         var startMin = Domain.timeToMinutes(cls.time);
         var dur = cls.duration || 60;
         var top = ((startMin - dayStartMin) / 60) * hourH;
@@ -5303,7 +5264,7 @@
           height += top;
           top = 0;
         }
-        grid += UI.renderClassCard(cls, top, height, layout[i]);
+        grid += UI.renderClassCard(cls, top, height);
       });
       grid += '</div></div>';
 
@@ -5314,14 +5275,6 @@
       } else {
         container.innerHTML = grid + UI.renderDayTotal(State.selectedDate);
       }
-    },
-    /** Ширина и отступ слева для карточки, если она делит время с другими */
-    cardColumnStyle(place) {
-      var cols = (place && place.cols) || 1;
-      if (cols < 2) return '';
-      var col = place.col || 0;
-      var w = 100 / cols;
-      return 'left:calc(' + (w * col) + '% + 2px);width:calc(' + w + '% - 4px);right:auto;';
     },
     /** Плашка «итог дня» под сеткой */
     renderDayTotal(dateStr) {
@@ -5339,7 +5292,7 @@
         '<div class="day-total-sum">' + UI.formatMoney(m.total) + '</div>' +
       '</div>';
     },
-    renderClassCard(cls, top, height, place) {
+    renderClassCard(cls, top, height) {
       var clients = (cls.clientIds || []).map(function (id) { return State.clientById(id); }).filter(Boolean);
       var paidCount = clients.filter(function (c) { return cls.payments && cls.payments[c.id]; }).length;
       var status = Domain.classPaymentStatus(cls);
@@ -5371,8 +5324,7 @@
           : '');
 
       return '<div class="time-class ' + status + '" data-action="class-open" data-id="' + cls.id +
-        '" style="top:' + top + 'px;height:' + height + 'px;z-index:' + z + ';' +
-          UI.cardColumnStyle(place) + '">' +
+        '" style="top:' + top + 'px;height:' + height + 'px;z-index:' + z + '">' +
         titleHtml +
         '<div class="time-class-head"><div class="time-class-time">' + Domain.formatTimeRange(cls.time, cls.duration || 60) + '</div>' + countHtml + '</div>' +
         '<div class="time-class-clients">' + namesHtml + '</div>' +
@@ -6001,34 +5953,13 @@
             title: 'Скопировать прошлую неделю?',
             text: 'Перенесётся ' + count + ' ' +
               UI.plural(count, 'занятие', 'занятия', 'занятий') +
-              ' — всё в точности как было. Оплаты не переносятся.',
+              ' — всё как было. Оплаты не переносятся.',
             okText: 'Скопировать'
           }).then(function (yes) {
             if (!yes) return;
             var res = Services.copyPreviousWeek(State.currentWeekStart);
             UI.renderSchedule();
-            if (!res.conflicts.length) {
-              UI.showToast(res.already
-                ? ('Скопировано: ' + res.copied + ', уже было: ' + res.already)
-                : ('Скопировано занятий: ' + res.copied));
-              return;
-            }
-            /* Ничего не пропущено — просто показываем, где занятия наложились,
-               чтобы тренер сам решил, что подвинуть. */
-            UI.notify({
-              icon: '⏱',
-              title: 'Скопировано, но есть накладки',
-              text: 'Перенеслись все ' + res.copied + '. В ' + res.conflicts.length + ' ' +
-                UI.plural(res.conflicts.length, 'случае', 'случаях', 'случаях') +
-                ' время пересекается — поправьте вручную:',
-              list: res.conflicts.map(function (c) {
-                return {
-                  when: Domain.formatDisplayDate(c.date) + ', ' +
-                    Domain.formatTimeRange(c.time, c.duration),
-                  what: c.title + ' ↔ ' + c.withTitles.join('; ')
-                };
-              })
-            });
+            Controllers.resolveCopyConflicts(res);
           });
           break;
         }
@@ -6408,26 +6339,6 @@
           });
           break;
         }
-        case 'find-duplicates': {
-          var dupes = Services.countDuplicateClasses();
-          if (!dupes) { UI.notify({ icon: '✨', title: 'Дублей нет', text: 'Одинаковых занятий в расписании не найдено.' }); break; }
-          UI.ask({
-            danger: true,
-            icon: '🧹',
-            title: 'Убрать дубли?',
-            text: 'Найдено ' + dupes + ' ' + UI.plural(dupes, 'дубль', 'дубля', 'дублей') +
-              ': одинаковые день, время, состав и название.\n\n' +
-              'Останется по одному занятию — то, где больше отметок об оплате.',
-            okText: 'Убрать'
-          }).then(function (yes) {
-            if (!yes) return;
-            var removed = Services.removeDuplicateClasses();
-            UI.renderSchedule();
-            UI.renderClients();
-            UI.showToast('Удалено дублей: ' + removed);
-          });
-          break;
-        }
         case 'import-trigger': UI.$('importFile').click(); break;
       }
     },
@@ -6449,6 +6360,45 @@
       State.currentWeekStart = Domain.getMonday(d);
       State.selectedDate = Domain.formatDate(d);
       UI.renderSchedule();
+    },
+    /**
+     * Проводит тренера по конфликтам копирования — по одному за раз.
+     *
+     * Конфликт здесь ровно один: в это время на новой неделе уже стоит ДРУГОЕ
+     * занятие. Одинаковые занятия конфликтом не считаются и сюда не попадают.
+     */
+    resolveCopyConflicts(res, index) {
+      var i = index || 0;
+      var list = (res && res.conflicts) || [];
+
+      if (i >= list.length) {
+        UI.renderSchedule();
+        UI.renderClients();
+        var parts = ['Скопировано: ' + res.copied];
+        if (res.already) parts.push('уже было: ' + res.already);
+        if (list.length) parts.push('разобрано накладок: ' + list.length);
+        UI.showToast(parts.join(', '));
+        return;
+      }
+
+      var c = list[i];
+      UI.ask({
+        icon: '⏱',
+        title: 'Накладка ' + (i + 1) + ' из ' + list.length,
+        text: c.newWhen + '\n\nПереносим: ' + c.newTitle +
+          '\nУже стоит: ' + c.existingTitles.join('; ') +
+          '\n\nЧто оставить?',
+        cancelText: 'Пропустить',
+        choices: [
+          { value: 'keep', label: 'Оставить то, что стоит' },
+          { value: 'replace', label: 'Заменить копией', danger: true },
+          { value: 'both', label: 'Оставить оба' }
+        ]
+      }).then(function (choice) {
+        if (choice) Services.resolveCopyConflict(c, choice);
+        UI.renderSchedule();
+        Controllers.resolveCopyConflicts(res, i + 1);
+      });
     },
     onClearDay() {
       var n = State.classes.filter(function (c) { return c.date === State.selectedDate; }).length;
