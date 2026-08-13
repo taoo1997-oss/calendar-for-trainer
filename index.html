@@ -1689,8 +1689,11 @@
           </div>
           <div class="form-group" style="margin:12px 0 0;">
             <label>Стоимость абонемента, ₽</label>
-            <input type="number" id="abonementPrice" min="1" step="100" inputmode="numeric" placeholder="6000" required>
-            <p class="text-sm text-muted" style="margin-top:6px;font-size:0.7rem;">Обязательно. Запишется в доход сегодняшним днём — без стоимости абонемент не выдаётся.</p>
+            <!-- Никаких required и min: поле лежит внутри формы клиента, и браузер
+                 не давал бы её сохранить, пока цена не заполнена. А цена нужна
+                 только в момент выдачи абонемента. Проверку делает обработчик «+». -->
+            <input type="number" id="abonementPrice" min="0" step="100" inputmode="numeric" placeholder="6000">
+            <p class="text-sm text-muted" style="margin-top:6px;font-size:0.7rem;">Нужна только при выдаче абонемента. Запишется в доход сегодняшним днём.</p>
           </div>
           <div class="chip-row" id="abonementChips" style="margin-top:12px;">
             <button type="button" class="chip" data-action="abon-add" data-sessions="4">+ 4</button>
@@ -1929,7 +1932,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-13 · 35',
+    BUILD: '2026-08-13 · 36',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
