@@ -1984,7 +1984,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-13 · 41',
+    BUILD: '2026-08-13 · 42',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -4092,21 +4092,36 @@
       Services.syncAbonementsForClass(conflict.draft, []);
       State.persist();
     },
-    /** Два занятия — это одно и то же по сути (время, длительность, состав, название)? */
+    /**
+     * Одно и то же занятие по сути?
+     *
+     * Решает состав участников: то же занятие с теми же людьми на следующей
+     * неделе — это продолжение расписания, а не конфликт. Длительность и
+     * название специально НЕ сравниваются: Мария в 21:00 на 45 минут и Мария
+     * в 21:00 на час — одно занятие, которое просто подправили по времени,
+     * и спрашивать «что оставить» тут не о чем.
+     */
     isSameClass(a, b) {
       if (!a || !b) return false;
-      if (a.time !== b.time) return false;
-      if ((a.duration || 60) !== (b.duration || 60)) return false;
-      if ((a.title || '').trim() !== (b.title || '').trim()) return false;
       if ((a.clubGroupId || null) !== (b.clubGroupId || null)) return false;
       var idsA = (a.clientIds || []).slice().sort().join(',');
       var idsB = (b.clientIds || []).slice().sort().join(',');
+      if (!idsA && !idsB) {
+        // Ни у того, ни у другого нет участников — сравниваем по названию и времени
+        return a.time === b.time && (a.title || '').trim() === (b.title || '').trim();
+      }
       return idsA === idsB;
     },
-    /** Есть ли на эту дату точно такое же занятие */
+    /** Есть ли на эту дату то же самое занятие (тот же состав в пересекающееся время) */
     findSameClass(date, cls) {
+      var start = Domain.timeToMinutes(cls.time);
+      var dur = cls.duration || 60;
       return State.classes.find(function (x) {
-        return x.date === date && x.id !== cls.id && Services.isSameClass(x, cls);
+        if (x.date !== date || x.id === cls.id) return false;
+        if (!Services.isSameClass(x, cls)) return false;
+        // то же время или пересекающееся — это оно же
+        return x.time === cls.time ||
+          Domain.intervalsOverlap(start, dur, Domain.timeToMinutes(x.time), x.duration || 60);
       }) || null;
     },
     /* —— Снимок перед разрушительным действием ——
@@ -4807,6 +4822,10 @@
       var modal = this.$('askModal');
       if (modal) { modal.classList.remove('show', 'danger'); }
       document.body.style.overflow = '';
+      var choices = this.$('askChoices');
+      if (choices) { choices.innerHTML = ''; choices.classList.add('hidden'); }
+      var ok = this.$('askOk');
+      if (ok) ok.classList.remove('hidden');
       var done = UI._askResolve;
       UI._askResolve = null;
       if (done) done(value);
@@ -6378,11 +6397,12 @@
         if (res.already) parts.push('уже было: ' + res.already);
         if (list.length) parts.push('разобрано накладок: ' + list.length);
         UI.showToast(parts.join(', '));
-        return;
+        return Promise.resolve();
       }
 
       var c = list[i];
-      UI.ask({
+      // Возвращаем промис: так вызывающий код (и тесты) знает, когда разбор окончен
+      return UI.ask({
         icon: '⏱',
         title: 'Накладка ' + (i + 1) + ' из ' + list.length,
         text: c.newWhen + '\n\nПереносим: ' + c.newTitle +
@@ -6397,7 +6417,7 @@
       }).then(function (choice) {
         if (choice) Services.resolveCopyConflict(c, choice);
         UI.renderSchedule();
-        Controllers.resolveCopyConflicts(res, i + 1);
+        return Controllers.resolveCopyConflicts(res, i + 1);
       });
     },
     onClearDay() {
@@ -6762,9 +6782,31 @@
          превращалось в ловушку — открыл занятие, ничего не менял, а сохранить
          нельзя, потому что рядом стоит его же копия. Расписание принадлежит
          тренеру: накладку показываем, но решение оставляем ему. */
+      /* Наложение по времени не запрещаем — расписание принадлежит тренеру.
+         Но и молчать нельзя: продлил занятие на час, а оно наехало на
+         следующее, и заметил ты это только на экране. Поэтому спрашиваем. */
       var overlaps = Domain.findOverlaps(State.classes, data.date, data.time, data.duration, id || null);
-      if (id) { Services.updateClass(id, data); UI.showToast(overlaps.length ? 'Сохранено · время пересекается' : 'Обновлено'); }
-      else { Services.createClass(data); UI.showToast(overlaps.length ? 'Создано · время пересекается' : 'Создано'); }
+      if (overlaps.length) {
+        UI.ask({
+          icon: '⏱',
+          title: 'Время пересекается',
+          text: Domain.formatTimeRange(data.time, data.duration) + ' накладывается на:\n' +
+            overlaps.map(function (o) {
+              return '• ' + Services.classDisplayTitle(o) + ' · ' +
+                Domain.formatTimeRange(o.time, o.duration || 60);
+            }).join('\n') + '\n\nСохранить всё равно?',
+          okText: 'Сохранить'
+        }).then(function (yes) {
+          if (yes) Controllers._saveClassConfirmed(id, data);
+        });
+        return;
+      }
+      Controllers._saveClassConfirmed(id, data);
+    },
+    /** Запись занятия после всех подтверждений */
+    _saveClassConfirmed(id, data) {
+      if (id) { Services.updateClass(id, data); UI.showToast('Обновлено'); }
+      else { Services.createClass(data); UI.showToast('Создано'); }
       State.selectedDate = data.date;
       State.currentWeekStart = Domain.getMonday(new Date(data.date + 'T12:00:00'));
       UI.closeModal('classModal');
@@ -7377,6 +7419,23 @@
       if (document.visibilityState === 'hidden') saveOnLeave();
     });
     window.addEventListener('pagehide', saveOnLeave);
+
+    /* —— Ничего не падает молча ——
+       Если где-то в обработчике случится ошибка, приложение раньше просто
+       переставало отвечать: окно закрылось, а дальше ничего. Теперь ошибка
+       видна на экране и остаётся в консоли — с ней можно прийти и починить. */
+    window.addEventListener('error', function (e) {
+      try {
+        console.error('[Танцевальный тренер]', e.error || e.message);
+        UI.showToast('Сбой: ' + ((e.error && e.error.message) || e.message || 'неизвестно'));
+      } catch (err) {}
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+      try {
+        console.error('[Танцевальный тренер] promise', e.reason);
+        UI.showToast('Сбой: ' + ((e.reason && e.reason.message) || 'операция прервана'));
+      } catch (err) {}
+    });
 
     /* Кнопки своего диалога */
     (function wireAsk() {
