@@ -1929,7 +1929,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-12 · 30',
+    BUILD: '2026-08-13 · 33',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -2006,10 +2006,42 @@
     dataKey() {
       return this.currentUser ? CONFIG.STORAGE_KEY + '_' + this.currentUser.id : CONFIG.STORAGE_KEY;
     },
+    /* —— Поиск по id ——
+       Раньше этот же find был написан по месту тридцать раз. Теперь одно
+       место: сюда же встанет индекс, если клиентов когда-нибудь станет много. */
+    clientById(id) {
+      if (!id) return null;
+      return this.clients.find(function (c) { return c.id === id; }) || null;
+    },
+    classById(id) {
+      if (!id) return null;
+      return this.classes.find(function (c) { return c.id === id; }) || null;
+    },
+    clubMemberById(id) {
+      if (!id) return null;
+      return this.clubMembers.find(function (m) { return m.id === id; }) || null;
+    },
+    clubGroupById(id) {
+      if (!id) return null;
+      return this.clubGroups.find(function (g) { return g.id === id; }) || null;
+    },
     /** Отметка времени последнего изменения — нужна, чтобы при входе
         понять, какая копия свежее: облачная или местная. */
     touch() {
       try { this.settings.updatedAt = new Date().toISOString(); } catch (e) {}
+    },
+    /**
+     * Изменить данные и сразу сохранить.
+     *
+     * Пишется так:  State.commit(function () { ...правки... });
+     * Смысл в том, чтобы сохранение нельзя было забыть: оно часть операции,
+     * а не отдельная строчка, которую надо не потерять. Возвращает то же,
+     * что вернула переданная функция.
+     */
+    commit(fn) {
+      var result = typeof fn === 'function' ? fn() : undefined;
+      this.persist();
+      return result;
     },
     persist() {
       this.touch();
@@ -2701,12 +2733,20 @@
       return d || s;
     },
     /** Найти аккаунт по логину в любом написании (+7 / 8 / со скобками) */
-    findUserByLogin(login) {
-      var db = this.loadUsers();
+    /**
+     * Найти аккаунт по логину в любом написании (+7 / 8 / со скобками).
+     *
+     * Второй аргумент — уже загруженное хранилище. Передавать его обязательно
+     * там, где найденную запись собираются менять: иначе метод загрузит свою
+     * копию, правки лягут в неё, а сохранится исходная — поверх них. Ровно так
+     * терялось обновление хеша пароля при входе.
+     */
+    findUserByLogin(login, db) {
+      db = db || this.loadUsers();
       var key = this.loginKey(login);
       if (!key) return null;
       var self = this;
-      return db.users.find(function (u) {
+      return (db.users || []).find(function (u) {
         return self.loginKey(u.loginKey || u.login) === key;
       }) || null;
     },
@@ -2769,7 +2809,8 @@
       if (!this.normalizeLogin(login)) return { ok: false, error: 'Введите телефон или email' };
       if (!password) return { ok: false, error: 'Введите пароль' };
       var db = this.loadUsers();
-      var user = this.findUserByLogin(login);
+      // db передаём явно: ниже эта запись меняется (обновление хеша пароля)
+      var user = this.findUserByLogin(login, db);
       if (!user) {
         var total = (db.users || []).length;
         return {
@@ -3517,7 +3558,7 @@
       return client;
     },
     updateClient(id, data) {
-      var c = State.clients.find(function (x) { return x.id === id; });
+      var c = State.clientById(id);
       if (!c) return null;
       c.name = data.name.trim();
       c.phone = (data.phone || '').trim();
@@ -3531,7 +3572,7 @@
     },
     /** Добавить/пополнить абонемент: 4, 6 или 8 занятий */
     addAbonement(clientId, sessions, price) {
-      var c = State.clients.find(function (x) { return x.id === clientId; });
+      var c = State.clientById(clientId);
       if (!c) return null;
       sessions = parseInt(sessions, 10);
       if ([4, 6, 8].indexOf(sessions) < 0) return null;
@@ -3541,6 +3582,12 @@
          и бабл должен показывать 4/4, а не 4/12. */
       var prevTotal = (prevRem > 0 && c.abonement && c.abonement.total > 0) ? c.abonement.total : 0;
       var debits = (c.abonement && c.abonement.debits) ? Object.assign({}, c.abonement.debits) : {};
+      /* Список продаж, из которых сложился этот абонемент. Нужен, чтобы при
+         сбросе убрать их из дохода: при пополнении продаж может быть несколько,
+         а от прошлого, уже закрытого абонемента — не наши, их трогать нельзя. */
+      var saleIds = (prevRem > 0 && c.abonement && Array.isArray(c.abonement.saleIds))
+        ? c.abonement.saleIds.slice()
+        : [];
       /* Дата выдачи.
          — Если абонемент выдаётся впервые или прошлый уже закончился (remaining = 0),
            начинается новый период → дата = сегодня. Прошедшие занятия не трогаем.
@@ -3554,6 +3601,7 @@
         remaining: prevRem + sessions,
         packSize: sessions,
         startDate: startDate,
+        saleIds: saleIds,
         price: Math.max(0, parseInt(price, 10) || 0),
         issuedAt: new Date().toISOString(),
         debits: debits
@@ -3561,7 +3609,7 @@
       // Продажа абонемента — это доход датой выдачи
       var sum = Math.max(0, parseInt(price, 10) || 0);
       if (sum > 0) {
-        Services.addIncome({
+        var sale = Services.addIncome({
           date: today,
           amount: sum,
           note: 'Абонемент ' + sessions + ' зан. — ' + c.name,
@@ -3569,6 +3617,7 @@
           clientId: c.id,
           sessions: parseInt(sessions, 10) || null
         });
+        if (sale) c.abonement.saleIds.push(sale.id);
       }
       // Сразу применить к уже существующим занятиям «Группа», где этот клиент в списке
       Services.syncClientAbonementAcrossClasses(clientId);
@@ -3599,24 +3648,57 @@
      * помечал занятия оплаченными. Ручные отметки «Оплатил», сделанные
      * без абонемента, не трогаем — они не его работа.
      */
+    /**
+     * Убрать абонемент клиента целиком.
+     *
+     * Снимает оплаты, которые проставил сам абонемент, и удаляет из дохода
+     * продажи, из которых он сложился. Сброс делают, когда абонемент выдан
+     * по ошибке, — если оставить продажу, месячный доход останется завышенным.
+     * Оплаты, проставленные вручную (деньгами), не трогаются.
+     */
     clearAbonement(clientId) {
-      var c = State.clients.find(function (x) { return x.id === clientId; });
+      var c = State.clientById(clientId);
       if (!c) return 0;
-      var debits = (c.abonement && c.abonement.debits) || {};
+      var ab = c.abonement || {};
+      var debits = ab.debits || {};
       var cleared = 0;
       Object.keys(debits).forEach(function (classId) {
         if (!debits[classId]) return;
-        var cls = State.classes.find(function (x) { return x.id === classId; });
+        var cls = State.classById(classId);
         if (!cls || !cls.payments) return;
         if (cls.payments[c.id]) { cls.payments[c.id] = false; cleared++; }
       });
+      Services.removeAbonementSales(c, ab);
       c.abonement = null;
       State.persist();
       return cleared;
     },
+    /**
+     * Удалить из дохода продажи, относящиеся к этому абонементу.
+     *
+     * Обычно они перечислены в saleIds. У абонементов, выданных до появления
+     * этого списка, его нет — тогда ищем по клиенту и дате: продажи абонементов
+     * этому человеку не раньше даты начала действия. Продажи прошлых, уже
+     * закрытых абонементов остаются в отчёте: те деньги относятся к другому
+     * периоду и к сегодняшнему сбросу отношения не имеют.
+     */
+    removeAbonementSales(client, abonement) {
+      if (!client || !abonement) return 0;
+      var ids = Array.isArray(abonement.saleIds) ? abonement.saleIds : null;
+      var start = abonement.startDate || null;
+      var before = State.incomes.length;
+      State.incomes = State.incomes.filter(function (inc) {
+        if (inc.type !== 'abonement') return true;
+        if (ids) return ids.indexOf(inc.id) === -1;
+        if (inc.clientId !== client.id) return true;
+        if (start && String(inc.date || '') < String(start)) return true;
+        return false;
+      });
+      return before - State.incomes.length;
+    },
     /** Сменить дату начала действия абонемента вручную (выдал задним числом и т.п.) */
     setAbonementStart(clientId, dateStr) {
-      var c = State.clients.find(function (x) { return x.id === clientId; });
+      var c = State.clientById(clientId);
       if (!c || !c.abonement) return null;
       if (!dateStr) return c;
       c.abonement.startDate = dateStr;
@@ -3669,7 +3751,7 @@
         var debits = c.abonement.debits || {};
         Object.keys(debits).forEach(function (classId) {
           if (!debits[classId]) return;
-          var cls = State.classes.find(function (x) { return x.id === classId; });
+          var cls = State.classById(classId);
           if (!cls || !cls.date) return;
           if (earliest === null || cls.date < earliest) earliest = cls.date;
         });
@@ -3681,7 +3763,7 @@
     },
     /** Списать 1 занятие абонемента за classId (если ещё не списано) */
     debitAbonement(clientId, classId) {
-      var c = State.clients.find(function (x) { return x.id === clientId; });
+      var c = State.clientById(clientId);
       if (!c || !c.abonement) return false;
       if (!c.abonement.debits) c.abonement.debits = {};
       if (c.abonement.debits[classId]) return false; // уже списано
@@ -3692,7 +3774,7 @@
     },
     /** Вернуть занятие в абонемент при удалении из группы */
     restoreAbonement(clientId, classId) {
-      var c = State.clients.find(function (x) { return x.id === clientId; });
+      var c = State.clientById(clientId);
       if (!c || !c.abonement) return false;
       if (!c.abonement.debits) c.abonement.debits = {};
       if (!c.abonement.debits[classId]) return false;
@@ -3729,7 +3811,7 @@
       // 2) Списать только у тех, у кого remaining > 0.
       //    У кого абонемент закончился — остаются обычными клиентами (без авто-оплаты).
       currentIds.forEach(function (cid) {
-        var c = State.clients.find(function (x) { return x.id === cid; });
+        var c = State.clientById(cid);
         if (!c || !c.abonement) return;
         // Занятие прошло до выдачи абонемента — не наше дело, оплата вручную
         if (!Services.abonementCoversClass(c, cls)) return;
@@ -3774,7 +3856,7 @@
       return cls;
     },
     updateClass(id, data) {
-      var cls = State.classes.find(function (x) { return x.id === id; });
+      var cls = State.classById(id);
       if (!cls) return null;
       var prevIds = (cls.clientIds || []).slice();
       var payments = {};
@@ -3802,7 +3884,7 @@
       return cls;
     },
     deleteClass(id) {
-      var cls = State.classes.find(function (c) { return c.id === id; });
+      var cls = State.classById(id);
       if (cls) {
         // вернуть все списания абонементов
         State.clients.forEach(function (c) {
@@ -3815,7 +3897,7 @@
       State.persist();
     },
     setPayment(classId, clientId, paid) {
-      var cls = State.classes.find(function (x) { return x.id === classId; });
+      var cls = State.classById(classId);
       if (!cls) return;
       if (!cls.payments) cls.payments = {};
       cls.payments[clientId] = !!paid;
@@ -3953,7 +4035,7 @@
       return m;
     },
     updateClubMember(id, data) {
-      var m = State.clubMembers.find(function (x) { return x.id === id; });
+      var m = State.clubMemberById(id);
       if (!m) return null;
       if (data.name !== undefined) m.name = String(data.name).trim();
       if (data.phone !== undefined) m.phone = String(data.phone).trim();
@@ -3992,7 +4074,7 @@
       return g;
     },
     updateClubGroup(id, data) {
-      var g = State.clubGroups.find(function (x) { return x.id === id; });
+      var g = State.clubGroupById(id);
       if (!g) return null;
       var prevPay = g.payments || {};
       g.name = (data.name || '').trim();
@@ -4012,7 +4094,7 @@
       State.persist();
     },
     setClubGroupPayment(groupId, memberId, paid) {
-      var g = State.clubGroups.find(function (x) { return x.id === groupId; });
+      var g = State.clubGroupById(groupId);
       if (!g) return;
       if (!g.payments) g.payments = {};
       g.payments[memberId] = !!paid;
@@ -4106,7 +4188,7 @@
       var n = 0;
       (cls.clientIds || []).forEach(function (cid) {
         if (!(cls.payments && cls.payments[cid])) return;
-        var c = State.clients.find(function (x) { return x.id === cid; });
+        var c = State.clientById(cid);
         if (Services.paidByAbonement(c, cls)) return;
         n++;
       });
@@ -4125,13 +4207,13 @@
       var shares = Services.classSharePerClient(cls);
       var payers = (cls.clientIds || []).filter(function (cid) {
         if (!(cls.payments && cls.payments[cid])) return false;
-        var c = State.clients.find(function (x) { return x.id === cid; });
+        var c = State.clientById(cid);
         return !Services.paidByAbonement(c, cls);
       });
       if (!payers.length) return [];
 
       return payers.map(function (cid) {
-        var c = State.clients.find(function (x) { return x.id === cid; });
+        var c = State.clientById(cid);
         return {
           clientId: cid,
           name: c ? c.name : 'Удалён',
@@ -4182,7 +4264,7 @@
         return inc.type === 'abonement' && inc.date && inc.date.slice(0, 7) === mk;
       }).map(function (inc) {
         var c = inc.clientId
-          ? State.clients.find(function (x) { return x.id === inc.clientId; })
+          ? State.clientById(inc.clientId)
           : null;
         // У ранних записей отдельного поля не было — достаём из подписи
         var sessions = inc.sessions;
@@ -4287,6 +4369,25 @@
       State.persist();
       return inc;
     },
+    /**
+     * Удалить одну продажу абонемента из отчёта.
+     *
+     * Нужна для записей, оставшихся от абонементов, сброшенных до того, как
+     * сброс научился их убирать. Заодно вычёркивает продажу из списка saleIds
+     * клиента, чтобы там не осталось ссылки в никуда.
+     */
+    deleteAbonementSale(incomeId) {
+      var inc = (State.incomes || []).find(function (x) { return x.id === incomeId; });
+      if (!inc || inc.type !== 'abonement') return false;
+      State.incomes = State.incomes.filter(function (x) { return x.id !== incomeId; });
+      State.clients.forEach(function (c) {
+        var ab = c.abonement;
+        if (!ab || !Array.isArray(ab.saleIds)) return;
+        ab.saleIds = ab.saleIds.filter(function (sid) { return sid !== incomeId; });
+      });
+      State.persist();
+      return true;
+    },
     deleteIncome(id) {
       State.incomes = State.incomes.filter(function (x) { return x.id !== id; });
       State.persist();
@@ -4311,7 +4412,7 @@
      *   не влияют, поэтому архив показывает то, что было тогда.
      * ===================================================== */
     clubMemberById(id) {
-      return State.clubMembers.find(function (m) { return m.id === id; }) || null;
+      return State.clubMemberById(id) || null;
     },
     /** Получить (при необходимости создать) запись группы за месяц */
     ensureClubMonth(group, key) {
@@ -4423,7 +4524,7 @@
       };
     },
     setClubMonthPayment(groupId, memberId, paid, key) {
-      var g = State.clubGroups.find(function (x) { return x.id === groupId; });
+      var g = State.clubGroupById(groupId);
       if (!g) return;
       var rec = Services.ensureClubMonth(g, key);
       if (!rec) return;
@@ -4448,7 +4549,7 @@
     },
     clubGroupStats(group) {
       var members = (group.memberIds || []).map(function (id) {
-        return State.clubMembers.find(function (m) { return m.id === id; });
+        return State.clubMemberById(id);
       }).filter(Boolean);
       var paid = 0, totalMoney = 0, collected = 0;
       members.forEach(function (m) {
@@ -4881,13 +4982,13 @@
       '</div>';
     },
     renderClassCard(cls, top, height) {
-      var clients = (cls.clientIds || []).map(function (id) { return State.clients.find(function (c) { return c.id === id; }); }).filter(Boolean);
+      var clients = (cls.clientIds || []).map(function (id) { return State.clientById(id); }).filter(Boolean);
       var paidCount = clients.filter(function (c) { return cls.payments && cls.payments[c.id]; }).length;
       var status = Domain.classPaymentStatus(cls);
       var startMin = Domain.timeToMinutes(cls.time);
       var z = 2 + Math.floor(startMin / 15);
 
-      var clubG = cls.clubGroupId ? State.clubGroups.find(function (g) { return g.id === cls.clubGroupId; }) : null;
+      var clubG = cls.clubGroupId ? State.clubGroupById(cls.clubGroupId) : null;
       var namesHtml = clients.length
         ? clients.map(function (c) {
             var paid = cls.payments && cls.payments[c.id];
@@ -4942,13 +5043,7 @@
         return;
       }
       list.innerHTML = clients.map(function (c) {
-        var abBadge = '';
-        if (c.abonement && c.abonement.total > 0) {
-          var rem = Math.max(0, c.abonement.remaining || 0);
-          var tot = c.abonement.total;
-          var lvl = Domain.abonementLevel(rem, tot);
-          abBadge = '<span class="abon-badge ' + (lvl === 'ok' ? '' : lvl) + '">' + rem + '/' + tot + '</span>';
-        }
+        var abBadge = UI.tpl.abonementBadge(c.abonement);
         return '<div class="card" style="padding:12px 16px;cursor:pointer;" data-action="client-open" data-id="' + c.id + '">' +
           '<div class="client-item"><div class="client-avatar">' + Domain.escapeHtml((c.name || '?')[0].toUpperCase()) + '</div>' +
           '<div class="client-info"><div class="client-name">' + Domain.escapeHtml(c.name) + abBadge + '</div>' +
@@ -5061,7 +5156,7 @@
       sel.onchange = function () {
         var gid = sel.value;
         if (!gid) return;
-        var g = State.clubGroups.find(function (x) { return x.id === gid; });
+        var g = State.clubGroupById(gid);
         if (!g) return;
         var titleEl = UI.$('classTitle');
         if (titleEl && !titleEl.value.trim()) titleEl.value = g.name;
@@ -5076,12 +5171,7 @@
       var sorted = State.clients.slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); });
       box.dataset.rendered = '1';
       box.innerHTML = sorted.map(function (c) {
-        var ab = '';
-        if (c.abonement && c.abonement.total > 0) {
-          var rem = Math.max(0, c.abonement.remaining || 0);
-          var lvl = Domain.abonementLevel(rem, c.abonement.total);
-          ab = '<span class="abon-badge ' + (lvl === 'ok' ? '' : lvl) + '">' + rem + '/' + c.abonement.total + '</span>';
-        }
+        var ab = UI.tpl.abonementBadge(c.abonement);
         return '<label class="client-select-item">' +
           '<input type="checkbox" value="' + c.id + '" ' + (selectedIds.indexOf(c.id) >= 0 ? 'checked' : '') + '>' +
           '<span class="client-select-meta">' +
@@ -5111,7 +5201,7 @@
       var checked = Array.from(document.querySelectorAll('#classClientSelect input:checked'));
       if (!checked.length) { el.textContent = 'Никто не выбран'; return; }
       var names = checked.map(function (cb) {
-        var c = State.clients.find(function (x) { return x.id === cb.value; });
+        var c = State.clientById(cb.value);
         return c ? c.name : '';
       }).filter(Boolean);
       var head = names.slice(0, 2).join(', ');
@@ -5173,6 +5263,41 @@
     moneyDetailKind: 'lessons',
     moneyGrouped: false,
 
+    /* —— Повторяющиеся кусочки разметки ——
+       Раньше каждый такой блок склеивался строками по месту: четыре почти
+       одинаковые строки детализации, три одинаковых бабла абонемента.
+       Из-за такой склейки и появился баг «Лада Солохина3 оплаты» — в мешанине
+       кавычек не видно, что теги строчные. Теперь разметка в одном месте,
+       и экранирование имени встроено, забыть его нельзя. */
+    tpl: {
+      /** Строка списка: аватар, имя, подпись под именем, сумма справа */
+      detailRow(opts) {
+        var attrs = opts.action
+          ? ' class="detail-row tappable" data-action="' + opts.action + '" data-id="' + opts.id + '"'
+          : ' class="detail-row"';
+        return '<div' + attrs + '>' +
+          '<span class="detail-avatar">' + Domain.escapeHtml(opts.avatar) + '</span>' +
+          '<span class="detail-info">' +
+            '<span class="detail-name">' + Domain.escapeHtml(opts.name) + '</span>' +
+            '<span class="detail-meta">' + Domain.escapeHtml(opts.meta || '') + '</span>' +
+          '</span>' +
+          '<span class="detail-sum">' + UI.formatMoney(opts.amount) + '</span>' +
+        '</div>';
+      },
+      /** Бабл абонемента: 7/8, цвет зависит от остатка */
+      abonementBadge(abonement) {
+        if (!abonement || !(abonement.total > 0)) return '';
+        var rem = abonement.remaining || 0;
+        var lvl = Domain.abonementLevel(rem, abonement.total);
+        return '<span class="abon-badge ' + (lvl === 'ok' ? '' : lvl) + '">' +
+          rem + '/' + abonement.total + '</span>';
+      },
+      /** Метка оплаты за занятие */
+      paidBadge(isPaid) {
+        return '<span class="paid-badge ' + (isPaid ? 'yes' : 'no') + '">' +
+          (isPaid ? 'Оплатил' : 'Не оплатил') + '</span>';
+      }
+    },
     renderMoneyDetail() {
       var kind = this.moneyDetailKind;
       var key = this.moneyMonth();
@@ -5200,15 +5325,12 @@
           g.forEach(function (r) { total += r.amount; });
           sub = g.length + ' ' + UI.plural(g.length, 'ученик', 'ученика', 'учеников') + ' · ' + monthName;
           rows = g.map(function (r) {
-            return '<div class="detail-row">' +
-              '<span class="detail-avatar">' + Domain.escapeHtml(UI.contactInitial(r.name)) + '</span>' +
-              '<span class="detail-info">' +
-                '<span class="detail-name">' + Domain.escapeHtml(r.name) + '</span>' +
-                '<span class="detail-meta">' + r.count + ' ' +
-                  UI.plural(r.count, 'оплата', 'оплаты', 'оплат') + '</span>' +
-              '</span>' +
-              '<span class="detail-sum">' + UI.formatMoney(r.amount) + '</span>' +
-            '</div>';
+            return UI.tpl.detailRow({
+              avatar: UI.contactInitial(r.name),
+              name: r.name,
+              meta: r.count + ' ' + UI.plural(r.count, 'оплата', 'оплаты', 'оплат'),
+              amount: r.amount
+            });
           });
         } else {
           var list = Services.lessonPaymentsForMonth(key);
@@ -5218,33 +5340,27 @@
             var note = Domain.formatDisplayDate(r.date) + ' · ' + r.time;
             if (!r.isGroup && r.people > 1) note += ' · пополам';
             else if (r.isGroup) note += ' · группа';
-            return '<div class="detail-row tappable" data-action="class-open" data-id="' + r.classId + '">' +
-              '<span class="detail-avatar">' + Domain.escapeHtml(UI.contactInitial(r.name)) + '</span>' +
-              '<span class="detail-info">' +
-                '<span class="detail-name">' + Domain.escapeHtml(r.name) + '</span>' +
-                '<span class="detail-meta">' + note + '</span>' +
-              '</span>' +
-              '<span class="detail-sum">' + UI.formatMoney(r.amount) + '</span>' +
-            '</div>';
+            return UI.tpl.detailRow({
+              action: 'class-open', id: r.classId,
+              avatar: UI.contactInitial(r.name),
+              name: r.name, meta: note, amount: r.amount
+            });
           });
         }
       } else if (kind === 'abonements') {
         var sales = Services.abonementSalesForMonth(key);
         sales.forEach(function (r) { total += r.amount; });
         sub = sales.length + ' ' + UI.plural(sales.length, 'абонемент', 'абонемента', 'абонементов') +
-          ' · ' + monthName;
+          ' · ' + monthName + ' · нажмите, чтобы убрать запись';
         rows = sales.map(function (r) {
           var meta = Domain.formatDisplayDate(r.date);
           if (r.sessions) meta += ' · ' + r.sessions + ' ' +
             UI.plural(r.sessions, 'занятие', 'занятия', 'занятий');
-          return '<div class="detail-row">' +
-            '<span class="detail-avatar">' + Domain.escapeHtml(UI.contactInitial(r.name)) + '</span>' +
-            '<span class="detail-info">' +
-              '<span class="detail-name">' + Domain.escapeHtml(r.name) + '</span>' +
-              '<span class="detail-meta">' + meta + '</span>' +
-            '</span>' +
-            '<span class="detail-sum">' + UI.formatMoney(r.amount) + '</span>' +
-          '</div>';
+          return UI.tpl.detailRow({
+            action: 'abon-sale-delete', id: r.id,
+            avatar: UI.contactInitial(r.name),
+            name: r.name, meta: meta, amount: r.amount
+          });
         });
       } else {
         var extras = Services.extraIncomesForMonth(key);
@@ -5252,14 +5368,13 @@
         sub = extras.length + ' ' + UI.plural(extras.length, 'запись', 'записи', 'записей') +
           ' · ' + monthName;
         rows = extras.map(function (r) {
-          return '<div class="detail-row tappable" data-action="income-open" data-id="' + r.id + '">' +
-            '<span class="detail-avatar">💰</span>' +
-            '<span class="detail-info">' +
-              '<span class="detail-name">' + Domain.escapeHtml(r.note || 'Доход') + '</span>' +
-              '<span class="detail-meta">' + Domain.formatDisplayDate(r.date) + '</span>' +
-            '</span>' +
-            '<span class="detail-sum">' + UI.formatMoney(r.amount) + '</span>' +
-          '</div>';
+          return UI.tpl.detailRow({
+            action: 'income-open', id: r.id,
+            avatar: '💰',
+            name: r.note || 'Доход',
+            meta: Domain.formatDisplayDate(r.date),
+            amount: r.amount
+          });
         });
       }
 
@@ -5282,7 +5397,7 @@
     },
     renderClassDetail(cls) {
       var clients = (cls.clientIds || []).map(function (cid) {
-        var c = State.clients.find(function (x) { return x.id === cid; });
+        var c = State.clientById(cid);
         return c ? Object.assign({}, c, { paid: !!(cls.payments && cls.payments[cid]) }) : null;
       }).filter(Boolean);
       var paidCount = clients.filter(function (c) { return c.paid; }).length;
@@ -5297,18 +5412,13 @@
         html += '<div class="empty" style="padding:20px;">Нет клиентов</div>';
       } else {
         html += clients.map(function (c) {
-          var abMark = '';
-          if (c.abonement && c.abonement.total > 0) {
-            var rem = Math.max(0, c.abonement.remaining || 0);
-            var tot = c.abonement.total;
-            var lvl = Domain.abonementLevel(rem, tot);
-            abMark = ' <span class="abon-badge ' + (lvl === 'ok' ? '' : lvl) + '">' + rem + '/' + tot + '</span>';
-          }
+          var badge = UI.tpl.abonementBadge(c.abonement);
+          var abMark = badge ? ' ' + badge : '';
           /* Если абонемент есть, но за это занятие не списался — прямо говорим почему */
           var why = Services.abonementSkipReason(c, cls);
           return '<div class="checkbox-item"><label for="pay_' + c.id + '" style="color:' + (c.paid ? '#059669' : 'inherit') +
             ';font-weight:' + (c.paid ? 600 : 500) + ';">' + Domain.escapeHtml(c.name) + abMark + '</label>' +
-            '<span class="paid-badge ' + (c.paid ? 'yes' : 'no') + '">' + (c.paid ? 'Оплатил' : 'Не оплатил') + '</span>' +
+            UI.tpl.paidBadge(c.paid) +
             '<input type="checkbox" id="pay_' + c.id + '" ' + (c.paid ? 'checked' : '') +
             ' data-action="toggle-pay" data-class="' + cls.id + '" data-client="' + c.id + '"></div>' +
             (why ? '<div class="abon-why">🎟 ' + Domain.escapeHtml(why) + '</div>' : '');
@@ -5506,6 +5616,349 @@
    * 7. CONTROLLERS
    * ========================================================= */
   const Controllers = {
+    /**
+     * Единая точка входа для всех нажатий по [data-action].
+     *
+     * Ветки сгруппированы по разделам приложения: видно, к какой части
+     * относится кнопка, и новую можно дописать в свой раздел, а не в конец.
+     */
+    onAction(action, el, e) {
+      switch (action) {
+
+        /* —— РАСПИСАНИЕ И ЗАНЯТИЯ —— */
+        case 'week-prev': Controllers.onWeekChange(-1); break;
+        case 'week-next': Controllers.onWeekChange(1); break;
+        case 'select-day': Controllers.onSelectDay(el.dataset.date); break;
+        case 'copy-week': {
+          var prevMon = Domain.addDays(State.currentWeekStart, -7);
+          var prevSun = Domain.addDays(prevMon, 6);
+          var count = State.classes.filter(function (c) {
+            var d = new Date(c.date + 'T12:00:00');
+            return d >= prevMon && d <= prevSun;
+          }).length;
+          if (!count) { UI.showToast('В прошлой неделе нет занятий'); break; }
+          if (!confirm('Скопировать ' + count + ' занятий с прошлой недели?\nЗанятия с пересечением по времени будут пропущены.')) break;
+          var res = Services.copyPreviousWeek(State.currentWeekStart);
+          UI.renderSchedule();
+          var msg = 'Скопировано: ' + res.copied;
+          if (res.skipped) msg += ', пропущено (пересечение): ' + res.skipped;
+          UI.showToast(msg);
+          break;
+        }
+        case 'clear-day': Controllers.onClearDay(); break;
+        case 'fab-add': {
+          var activeTab = document.querySelector('.nav-item.active');
+          var tab = activeTab ? activeTab.dataset.tab : 'schedule';
+          if (tab === 'clients') Controllers.openClientModal(null);
+          else if (tab === 'club') Controllers.openClubMemberModal(null);
+          else Controllers.openClassModal(null);
+          break;
+        }
+        case 'class-create': Controllers.openClassModal(null); break;
+        case 'class-open':
+          /* Раньше на это действие было два case подряд, и второй никогда не
+             срабатывал: switch останавливается на первом совпадении. Из-за этого
+             занятие, открытое из «Детализации», оставляло окно детализации
+             висеть под собой. Теперь ветка одна и закрывает его. */
+          UI.closeModal('moneyDetailModal');
+          Controllers.openClassDetail(el.dataset.id);
+          break;
+        case 'class-edit-current':
+          UI.closeModal('classDetailModal');
+          Controllers.openClassModal(State.currentDetailClassId);
+          break;
+        case 'class-delete': Controllers.deleteClass(); break;
+        case 'toggle-pay':
+          Controllers.togglePayment(el.dataset.class, el.dataset.client, el.checked);
+          break;
+
+        /* —— КЛИЕНТЫ И АБОНЕМЕНТЫ —— */
+        case 'client-create': Controllers.openClientModal(null); break;
+        case 'client-open': Controllers.openClientModal(el.dataset.id); break;
+        case 'client-delete': Controllers.deleteClient(); break;
+        case 'toggle-client-select': {
+          var listEl = UI.$('classClientSelect');
+          var caret = UI.$('clientSelectCaret');
+          if (listEl) {
+            var willOpen = listEl.classList.contains('hidden');
+            listEl.classList.toggle('hidden', !willOpen);
+            if (caret) caret.classList.toggle('open', willOpen);
+          }
+          break;
+        }
+        case 'abon-add': {
+          var cid = UI.$('clientId').value;
+          if (!cid) { UI.showToast('Сначала сохраните клиента'); break; }
+          var sessions = el.dataset.sessions;
+          var priceEl = UI.$('abonementPrice');
+          var abonPrice = priceEl ? parseInt(priceEl.value, 10) || 0 : 0;
+          Services.addAbonement(cid, sessions, abonPrice);
+          if (priceEl) priceEl.value = '';
+          var client = State.clientById(cid);
+          UI.renderAbonementInfo(client);
+          UI.renderClients();
+          UI.renderSchedule();
+          if (State.currentDetailClassId) {
+            var dcls = State.classById(State.currentDetailClassId);
+            if (dcls) UI.renderClassDetail(dcls);
+          }
+          var rem = client && client.abonement ? client.abonement.remaining : '';
+          var sd = client && client.abonement ? client.abonement.startDate : '';
+          UI.showToast('Абонемент обновлён' + (rem !== '' ? ': осталось ' + rem : '') +
+            (sd ? ' · с ' + Domain.formatDisplayDate(sd) : '') +
+            (abonPrice > 0 ? ' · ' + UI.formatMoney(abonPrice) : ''));
+          break;
+        }
+        case 'abon-clear': {
+          var cid2 = UI.$('clientId').value;
+          if (!cid2) break;
+          if (!confirm('Сбросить абонемент клиента?\n\nОплаты, проставленные этим абонементом, тоже снимутся.')) break;
+          var clearedN = Services.clearAbonement(cid2);
+          var client2 = State.clientById(cid2);
+          UI.renderAbonementInfo(client2);
+          UI.renderClients();
+          UI.renderSchedule();
+          if (State.currentDetailClassId) {
+            var dcl = State.classById(State.currentDetailClassId);
+            if (dcl) UI.renderClassDetail(dcl);
+          }
+          UI.showToast(clearedN
+            ? 'Абонемент сброшен · снято оплат: ' + clearedN
+            : 'Абонемент сброшен');
+          break;
+        }
+        case 'pick-contacts': Controllers.pickContacts(); break;
+        case 'contacts-toggle-all': Controllers.toggleAllContacts(); break;
+        case 'contacts-add-selected': Controllers.addSelectedContacts(); break;
+
+        /* —— ДЕНЬГИ —— */
+        case 'money-detail': {
+          UI.moneyDetailKind = el.dataset.kind || 'lessons';
+          UI.moneyGrouped = false;
+          UI.renderMoneyDetail();
+          UI.openModal('moneyDetailModal');
+          break;
+        }
+        case 'money-toggle-group': {
+          UI.moneyGrouped = !UI.moneyGrouped;
+          UI.renderMoneyDetail();
+          break;
+        }
+        case 'money-month-prev': Controllers.shiftMoneyMonth(-1); break;
+        case 'money-month-next': Controllers.shiftMoneyMonth(1); break;
+        case 'income-add': Controllers.openIncomeModal(null); break;
+        case 'income-open': Controllers.openIncomeModal(el.dataset.id); break;
+        case 'abon-sale-delete': {
+          var saleName = el.querySelector('.detail-name');
+          if (!confirm('Убрать продажу абонемента из отчёта?\n' +
+              (saleName ? saleName.textContent : '') +
+              '\n\nСам абонемент клиента при этом не меняется.')) break;
+          if (Services.deleteAbonementSale(el.dataset.id)) {
+            UI.closeModal('moneyDetailModal');
+            UI.renderClients();
+            UI.showToast('Продажа убрана из отчёта');
+          }
+          break;
+        }
+        case 'income-delete': {
+          var incId = UI.$('incomeId').value;
+          if (!incId) break;
+          if (!confirm('Удалить эту запись о доходе?')) break;
+          Services.deleteIncome(incId);
+          UI.closeModal('incomeModal');
+          UI.renderClients();
+          UI.renderSchedule();
+          var det = document.getElementById('moneyDetailModal');
+          if (det && det.classList.contains('show')) UI.renderMoneyDetail();
+          UI.showToast('Удалено');
+          break;
+        }
+
+        /* —— КЛУБ —— */
+        case 'club-member-open': Controllers.openClubMemberModal(el.dataset.id); break;
+        case 'club-member-delete': Controllers.deleteClubMember(); break;
+        case 'club-group-create': Controllers.openClubGroupModal(null); break;
+        case 'club-group-open': Controllers.openClubGroupDetail(el.dataset.id); break;
+        case 'club-group-edit-current':
+          UI.closeModal('clubGroupDetailModal');
+          Controllers.openClubGroupModal(State.currentDetailGroupId);
+          break;
+        case 'club-group-delete': Controllers.deleteClubGroup(); break;
+        case 'club-toggle-pay':
+          Controllers.toggleClubPayment(el.dataset.group, el.dataset.member, el.checked, el.dataset.month);
+          break;
+        case 'club-month-prev': Controllers.shiftClubMonth(-1); break;
+        case 'club-month-next': Controllers.shiftClubMonth(1); break;
+        case 'club-month-now': Controllers.setClubMonth(Domain.currentMonthKey()); break;
+        case 'club-discount-open':
+          if (UI.isClubArchive()) {
+            UI.showToast('Скидки меняются только в текущем месяце');
+            break;
+          }
+          Controllers.openDiscountModal(el.dataset.id);
+          break;
+        case 'club-discount-set':
+          Controllers.applyDiscount(parseInt(el.dataset.amount, 10) || 0);
+          break;
+        case 'club-discount-custom': {
+          var custom = parseInt(UI.$('clubDiscountCustom').value, 10);
+          if (isNaN(custom) || custom < 0) { UI.showToast('Введите сумму'); break; }
+          Controllers.applyDiscount(custom);
+          break;
+        }
+
+        /* —— ВХОД И ПРОФИЛЬ —— */
+        case 'auth-mode':
+          setAuthMode(el.dataset.panel, el.dataset.mode);
+          break;
+        case 'register-local': {
+          (async function () {
+            var loginRaw = authLoginValue('reg');
+            var r = await Auth.registerLocal(
+              document.getElementById('regName').value,
+              loginRaw,
+              document.getElementById('regPass').value
+            );
+            if (!r.ok) {
+              UI.showToast(r.error);
+              // Аккаунт уже есть — сразу открываем вход с подставленным логином
+              if (r.exists) {
+                showAuthGate('login');
+                authLoginFill('login', r.login || loginRaw);
+                var lp = document.getElementById('loginPass');
+                if (lp) { lp.value = ''; lp.focus(); }
+              }
+              return;
+            }
+            await enterApp(r.user);
+            UI.showToast('Аккаунт создан: ' + Auth.displayLogin(r.user.login));
+          })();
+          break;
+        }
+        case 'login-local': {
+          (async function () {
+            var loginRaw2 = authLoginValue('login');
+            var lr = await Auth.loginLocal(
+              loginRaw2,
+              document.getElementById('loginPass').value
+            );
+            if (!lr.ok) {
+              UI.showToast(lr.error);
+              // Совсем нет аккаунтов — отправляем регистрироваться
+              if (lr.notFound && Auth.accountsCount() === 0) {
+                showAuthGate('register');
+                authLoginFill('reg', loginRaw2);
+              }
+              return;
+            }
+            await enterApp(lr.user);
+            UI.showToast('С возвращением, ' + (lr.user.name || '') + '!');
+          })();
+          break;
+        }
+        case 'show-login': showAuthGate('login'); break;
+        case 'show-register': showAuthGate('register'); break;
+        case 'yandex-login': Auth.startYandexOAuth(); break;
+        case 'save-yandex-clientid': {
+          var input = document.getElementById('authYandexClientId');
+          var val = input ? input.value.trim() : '';
+          if (!val) { UI.showToast('Вставьте ClientID'); break; }
+          Auth.saveYandexClientId(val);
+          // синхронизируем поле в настройках, если оно есть
+          var sInput = document.getElementById('settingYandexClientId');
+          if (sInput) sInput.value = val;
+          UI.showToast('ClientID сохранён — можно входить через Яндекс');
+          var hint = document.getElementById('yandexHint');
+          if (hint) hint.textContent = 'ClientID сохранён ✓';
+          break;
+        }
+        case 'logout':
+          if (!confirm('Выйти из аккаунта? Данные в облаке (Яндекс.Диск) сохранятся.')) break;
+          Auth.logout();
+          showAuthGate('login');
+          UI.showToast('Вы вышли');
+          break;
+        case 'open-auth':
+          UI.$('authName').value = (State.currentUser && State.currentUser.name) || State.settings.profileName || '';
+          UI.$('authPhone').value = (State.currentUser && State.currentUser.login) || State.settings.profilePhone || '';
+          UI.openModal('authModal');
+          break;
+        case 'profile-save': Controllers.saveProfile(); break;
+        case 'profile-clear': UI.closeModal('authModal'); break;
+
+        /* —— СИНХРОНИЗАЦИЯ —— */
+        case 'cloud-sync-now': {
+          (async function () {
+            if (!Cloud.canSync()) {
+              UI.showToast('Синхронизация доступна только после входа через Яндекс ID');
+              return;
+            }
+            UI.showToast('Синхронизация…');
+            var res = await Cloud.syncOnLogin();
+            UI.applyTheme();
+            UI.renderSchedule();
+            UI.renderClients();
+            if (res.ok) UI.showToast(res.reason === 'pulled' ? 'Загружено из облака' : 'Сохранено в облако');
+            else UI.showToast('Не удалось синхронизировать');
+            var el = document.getElementById('syncStatus');
+            if (el) el.textContent = Cloud.canSync()
+              ? ('☁ Активна · ' + new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }))
+              : 'Только локально';
+          })();
+          break;
+        }
+        case 'cloud-push-now': {
+          (async function () {
+            if (!Cloud.canSync()) {
+              UI.showToast('Синхронизация доступна только после входа через Яндекс ID');
+              return;
+            }
+            var n = Cloud.localCount();
+            if (n === 0) {
+              UI.showToast('На этом устройстве нет данных — отправлять нечего');
+              return;
+            }
+            if (!confirm('Отправить данные с этого устройства в облако?\n\n' +
+                'Здесь сейчас ' + n + ' записей (клиентов ' + State.clients.length +
+                ', занятий ' + State.classes.length + ').\n' +
+                'То, что лежит в облаке, будет заменено.')) return;
+            UI.showToast('Отправляю…');
+            var res = await Cloud.pushNow();
+            if (res.ok) {
+              UI.showToast('Отправлено в облако: ' + res.count + ' записей');
+              var st = document.getElementById('syncStatus');
+              if (st) st.textContent = '☁ Активна · ' +
+                new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+            } else if (res.reason === 'nothing-to-send') {
+              UI.showToast('Отправлять нечего');
+            } else {
+              UI.showToast('Не удалось отправить — проверьте связь');
+            }
+          })();
+          break;
+        }
+        case 'cloud-diagnose': {
+          (async function () {
+            var box = document.getElementById('cloudDiagnostics');
+            if (!box) return;
+            box.classList.remove('hidden');
+            box.textContent = 'Проверяю…';
+            try {
+              box.textContent = await Cloud.diagnose();
+            } catch (err) {
+              box.textContent = 'Ошибка проверки: ' + err.message;
+            }
+          })();
+          break;
+        }
+
+        /* —— НАСТРОЙКИ И ОФОРМЛЕНИЕ —— */
+        case 'theme-pick': break;
+        case 'set-color': Controllers.setPrimaryColor(el.dataset.color); break;
+        case 'export': Controllers.exportData(); break;
+        case 'import-trigger': UI.$('importFile').click(); break;
+      }
+    },
     onWeekChange(dir) {
       State.currentWeekStart = Domain.addDays(State.currentWeekStart, dir * 7);
       var sel = new Date(State.selectedDate + 'T12:00:00');
@@ -5534,7 +5987,7 @@
       UI.showToast('День очищен');
     },
     openClientModal(id) {
-      var client = id ? State.clients.find(function (c) { return c.id === id; }) : null;
+      var client = id ? State.clientById(id) : null;
       UI.fillClientForm(client || null);
       UI.openModal('clientModal');
     },
@@ -5793,7 +6246,7 @@
       return list;
     },
     openClassModal(id) {
-      var cls = id ? State.classes.find(function (c) { return c.id === id; }) : null;
+      var cls = id ? State.classById(id) : null;
       UI.fillClassForm(cls || null);
       // Не оставляем в форме идентификатор прошлого занятия
       if (UI.$('classId')) UI.$('classId').value = cls ? cls.id : '';
@@ -5827,7 +6280,7 @@
         price: UI.$('classPrice') ? UI.$('classPrice').value : 0
       };
       if (clubGroupId && !data.title.trim()) {
-        var cg = State.clubGroups.find(function (g) { return g.id === clubGroupId; });
+        var cg = State.clubGroupById(clubGroupId);
         if (cg) data.title = cg.name;
       }
       var overlaps = Domain.findOverlaps(State.classes, data.date, data.time, data.duration, id || null);
@@ -5864,7 +6317,7 @@
       var id = detailOpen
         ? (State.currentDetailClassId || UI.$('classId').value)
         : (UI.$('classId').value || State.currentDetailClassId);
-      var cls = State.classes.find(function (x) { return x.id === id; });
+      var cls = State.classById(id);
       if (!cls) {
         UI.showToast('Занятие не найдено — обновите экран');
         return;
@@ -5879,7 +6332,7 @@
       UI.showToast('Удалено');
     },
     openClubMemberModal(id) {
-      var m = id ? State.clubMembers.find(function (x) { return x.id === id; }) : null;
+      var m = id ? State.clubMemberById(id) : null;
       UI.fillClubMemberForm(m || null);
       UI.openModal('clubMemberModal');
     },
@@ -5911,7 +6364,7 @@
       UI.showToast('Удалено');
     },
     openClubGroupModal(id) {
-      var g = id ? State.clubGroups.find(function (x) { return x.id === id; }) : null;
+      var g = id ? State.clubGroupById(id) : null;
       UI.fillClubGroupForm(g || null);
       UI.openModal('clubGroupModal');
     },
@@ -5934,7 +6387,7 @@
       UI.closeModal('clubGroupModal');
       UI.renderClub();
       if (State.currentDetailGroupId) {
-        var g2 = State.clubGroups.find(function (x) { return x.id === State.currentDetailGroupId; });
+        var g2 = State.clubGroupById(State.currentDetailGroupId);
         if (g2) UI.renderClubGroupDetail(g2);
       }
     },
@@ -5949,7 +6402,7 @@
       UI.showToast('Группа удалена');
     },
     openClubGroupDetail(id) {
-      var g = State.clubGroups.find(function (x) { return x.id === id; });
+      var g = State.clubGroupById(id);
       if (!g) return;
       State.currentDetailGroupId = id;
       UI.renderClubGroupDetail(g);
@@ -5958,7 +6411,7 @@
     toggleClubPayment(groupId, memberId, paid, monthKey) {
       var key = monthKey || UI.clubMonth();
       Services.setClubMonthPayment(groupId, memberId, paid, key);
-      var g = State.clubGroups.find(function (x) { return x.id === groupId; });
+      var g = State.clubGroupById(groupId);
       if (g) UI.renderClubGroupDetail(g);
       UI.renderClub();
       var suffix = (key === Domain.currentMonthKey()) ? '' : ' · ' + Domain.monthLabel(key);
@@ -6017,7 +6470,7 @@
       UI.renderClub();
       // если открыта карточка группы — пересобрать под новый месяц
       if (State.currentDetailGroupId) {
-        var g = State.clubGroups.find(function (x) { return x.id === State.currentDetailGroupId; });
+        var g = State.clubGroupById(State.currentDetailGroupId);
         if (g) UI.renderClubGroupDetail(g);
       }
     },
@@ -6030,7 +6483,7 @@
       Controllers.setClubMonth(next);
     },
     openDiscountModal(memberId) {
-      var m = State.clubMembers.find(function (x) { return x.id === memberId; });
+      var m = State.clubMemberById(memberId);
       if (!m) return;
       UI.$('clubDiscountMemberId').value = m.id;
       UI.$('clubDiscountMemberName').textContent = m.name + (m.discount ? ' (сейчас −' + m.discount + ' ₽)' : '');
@@ -6044,19 +6497,19 @@
       UI.closeModal('clubDiscountModal');
       UI.renderClub();
       if (State.currentDetailGroupId) {
-        var g = State.clubGroups.find(function (x) { return x.id === State.currentDetailGroupId; });
+        var g = State.clubGroupById(State.currentDetailGroupId);
         if (g) UI.renderClubGroupDetail(g);
       }
       UI.showToast(amount ? ('Скидка ' + amount + ' ₽') : 'Скидка снята');
     },
     openClassDetail(id) {
-      var cls = State.classes.find(function (x) { return x.id === id; });
+      var cls = State.classById(id);
       if (!cls) return;
       // подтянуть абонементы (на случай если занятие создали раньше абонемента)
       if (Domain.isGroupClass(cls)) {
         Services.syncAbonementsForClass(cls, cls.clientIds || []);
         State.persist();
-        cls = State.classes.find(function (x) { return x.id === id; });
+        cls = State.classById(id);
       }
       State.currentDetailClassId = id;
       UI.renderClassDetail(cls);
@@ -6143,7 +6596,7 @@
       /* Ручка для автотестов и разбора проблем: из консоли браузера
          доступно window.__dt.State / .Services / .Domain / .UI */
       try {
-        window.__dt = { CONFIG: CONFIG, State: State, Services: Services, Domain: Domain, UI: UI };
+        window.__dt = { CONFIG: CONFIG, State: State, Services: Services, Domain: Domain, UI: UI, Auth: Auth };
       } catch (e) {}
     } catch (e) {}
 
@@ -6409,314 +6862,21 @@
       var el = e.target.closest('[data-action]');
       if (!el) return;
       var action = el.dataset.action;
-      switch (action) {
-        case 'week-prev': Controllers.onWeekChange(-1); break;
-        case 'week-next': Controllers.onWeekChange(1); break;
-        case 'select-day': Controllers.onSelectDay(el.dataset.date); break;
-        case 'copy-week': {
-          var prevMon = Domain.addDays(State.currentWeekStart, -7);
-          var prevSun = Domain.addDays(prevMon, 6);
-          var count = State.classes.filter(function (c) {
-            var d = new Date(c.date + 'T12:00:00');
-            return d >= prevMon && d <= prevSun;
-          }).length;
-          if (!count) { UI.showToast('В прошлой неделе нет занятий'); break; }
-          if (!confirm('Скопировать ' + count + ' занятий с прошлой недели?\nЗанятия с пересечением по времени будут пропущены.')) break;
-          var res = Services.copyPreviousWeek(State.currentWeekStart);
-          UI.renderSchedule();
-          var msg = 'Скопировано: ' + res.copied;
-          if (res.skipped) msg += ', пропущено (пересечение): ' + res.skipped;
-          UI.showToast(msg);
-          break;
-        }
-        case 'clear-day': Controllers.onClearDay(); break;
-        case 'class-create': Controllers.openClassModal(null); break;
-        case 'class-open': Controllers.openClassDetail(el.dataset.id); break;
-        case 'class-edit-current':
-          UI.closeModal('classDetailModal');
-          Controllers.openClassModal(State.currentDetailClassId);
-          break;
-        case 'class-delete': Controllers.deleteClass(); break;
-        case 'client-create': Controllers.openClientModal(null); break;
-        case 'fab-add': {
-          var activeTab = document.querySelector('.nav-item.active');
-          var tab = activeTab ? activeTab.dataset.tab : 'schedule';
-          if (tab === 'clients') Controllers.openClientModal(null);
-          else if (tab === 'club') Controllers.openClubMemberModal(null);
-          else Controllers.openClassModal(null);
-          break;
-        }
-        case 'club-member-open': Controllers.openClubMemberModal(el.dataset.id); break;
-        case 'club-member-delete': Controllers.deleteClubMember(); break;
-        case 'club-group-create': Controllers.openClubGroupModal(null); break;
-        case 'club-group-open': Controllers.openClubGroupDetail(el.dataset.id); break;
-        case 'club-group-edit-current':
-          UI.closeModal('clubGroupDetailModal');
-          Controllers.openClubGroupModal(State.currentDetailGroupId);
-          break;
-        case 'club-group-delete': Controllers.deleteClubGroup(); break;
-        case 'club-toggle-pay':
-          Controllers.toggleClubPayment(el.dataset.group, el.dataset.member, el.checked, el.dataset.month);
-          break;
-        case 'theme-pick': break;
-        case 'toggle-client-select': {
-          var listEl = UI.$('classClientSelect');
-          var caret = UI.$('clientSelectCaret');
-          if (listEl) {
-            var willOpen = listEl.classList.contains('hidden');
-            listEl.classList.toggle('hidden', !willOpen);
-            if (caret) caret.classList.toggle('open', willOpen);
-          }
-          break;
-        }
-        case 'money-detail': {
-          UI.moneyDetailKind = el.dataset.kind || 'lessons';
-          UI.moneyGrouped = false;
-          UI.renderMoneyDetail();
-          UI.openModal('moneyDetailModal');
-          break;
-        }
-        case 'money-toggle-group': {
-          UI.moneyGrouped = !UI.moneyGrouped;
-          UI.renderMoneyDetail();
-          break;
-        }
-        case 'class-open': {
-          UI.closeModal('moneyDetailModal');
-          Controllers.openClassDetail(el.dataset.id);
-          break;
-        }
-        case 'money-month-prev': Controllers.shiftMoneyMonth(-1); break;
-        case 'money-month-next': Controllers.shiftMoneyMonth(1); break;
-        case 'income-add': Controllers.openIncomeModal(null); break;
-        case 'income-open': Controllers.openIncomeModal(el.dataset.id); break;
-        case 'income-delete': {
-          var incId = UI.$('incomeId').value;
-          if (!incId) break;
-          if (!confirm('Удалить эту запись о доходе?')) break;
-          Services.deleteIncome(incId);
-          UI.closeModal('incomeModal');
-          UI.renderClients();
-          UI.renderSchedule();
-          var det = document.getElementById('moneyDetailModal');
-          if (det && det.classList.contains('show')) UI.renderMoneyDetail();
-          UI.showToast('Удалено');
-          break;
-        }
-        case 'club-month-prev': Controllers.shiftClubMonth(-1); break;
-        case 'club-month-next': Controllers.shiftClubMonth(1); break;
-        case 'club-month-now': Controllers.setClubMonth(Domain.currentMonthKey()); break;
-        case 'club-discount-open':
-          if (UI.isClubArchive()) {
-            UI.showToast('Скидки меняются только в текущем месяце');
-            break;
-          }
-          Controllers.openDiscountModal(el.dataset.id);
-          break;
-        case 'club-discount-set':
-          Controllers.applyDiscount(parseInt(el.dataset.amount, 10) || 0);
-          break;
-        case 'club-discount-custom': {
-          var custom = parseInt(UI.$('clubDiscountCustom').value, 10);
-          if (isNaN(custom) || custom < 0) { UI.showToast('Введите сумму'); break; }
-          Controllers.applyDiscount(custom);
-          break;
-        }
-        case 'abon-add': {
-          var cid = UI.$('clientId').value;
-          if (!cid) { UI.showToast('Сначала сохраните клиента'); break; }
-          var sessions = el.dataset.sessions;
-          var priceEl = UI.$('abonementPrice');
-          var abonPrice = priceEl ? parseInt(priceEl.value, 10) || 0 : 0;
-          Services.addAbonement(cid, sessions, abonPrice);
-          if (priceEl) priceEl.value = '';
-          var client = State.clients.find(function (x) { return x.id === cid; });
-          UI.renderAbonementInfo(client);
-          UI.renderClients();
-          UI.renderSchedule();
-          if (State.currentDetailClassId) {
-            var dcls = State.classes.find(function (x) { return x.id === State.currentDetailClassId; });
-            if (dcls) UI.renderClassDetail(dcls);
-          }
-          var rem = client && client.abonement ? client.abonement.remaining : '';
-          var sd = client && client.abonement ? client.abonement.startDate : '';
-          UI.showToast('Абонемент обновлён' + (rem !== '' ? ': осталось ' + rem : '') +
-            (sd ? ' · с ' + Domain.formatDisplayDate(sd) : '') +
-            (abonPrice > 0 ? ' · ' + UI.formatMoney(abonPrice) : ''));
-          break;
-        }
-        case 'abon-clear': {
-          var cid2 = UI.$('clientId').value;
-          if (!cid2) break;
-          if (!confirm('Сбросить абонемент клиента?\n\nОплаты, проставленные этим абонементом, тоже снимутся.')) break;
-          var clearedN = Services.clearAbonement(cid2);
-          var client2 = State.clients.find(function (x) { return x.id === cid2; });
-          UI.renderAbonementInfo(client2);
-          UI.renderClients();
-          UI.renderSchedule();
-          if (State.currentDetailClassId) {
-            var dcl = State.classes.find(function (x) { return x.id === State.currentDetailClassId; });
-            if (dcl) UI.renderClassDetail(dcl);
-          }
-          UI.showToast(clearedN
-            ? 'Абонемент сброшен · снято оплат: ' + clearedN
-            : 'Абонемент сброшен');
-          break;
-        }
-        case 'client-open': Controllers.openClientModal(el.dataset.id); break;
-        case 'client-delete': Controllers.deleteClient(); break;
-        case 'pick-contacts': Controllers.pickContacts(); break;
-        case 'contacts-toggle-all': Controllers.toggleAllContacts(); break;
-        case 'contacts-add-selected': Controllers.addSelectedContacts(); break;
-        case 'open-auth':
-          UI.$('authName').value = (State.currentUser && State.currentUser.name) || State.settings.profileName || '';
-          UI.$('authPhone').value = (State.currentUser && State.currentUser.login) || State.settings.profilePhone || '';
-          UI.openModal('authModal');
-          break;
-        case 'profile-save': Controllers.saveProfile(); break;
-        case 'profile-clear': UI.closeModal('authModal'); break;
-        case 'set-color': Controllers.setPrimaryColor(el.dataset.color); break;
-        case 'export': Controllers.exportData(); break;
-        case 'import-trigger': UI.$('importFile').click(); break;
-        case 'toggle-pay':
-          Controllers.togglePayment(el.dataset.class, el.dataset.client, el.checked);
-          break;
-        case 'auth-mode':
-          setAuthMode(el.dataset.panel, el.dataset.mode);
-          break;
-        case 'register-local': {
-          (async function () {
-            var loginRaw = authLoginValue('reg');
-            var r = await Auth.registerLocal(
-              document.getElementById('regName').value,
-              loginRaw,
-              document.getElementById('regPass').value
-            );
-            if (!r.ok) {
-              UI.showToast(r.error);
-              // Аккаунт уже есть — сразу открываем вход с подставленным логином
-              if (r.exists) {
-                showAuthGate('login');
-                authLoginFill('login', r.login || loginRaw);
-                var lp = document.getElementById('loginPass');
-                if (lp) { lp.value = ''; lp.focus(); }
-              }
-              return;
-            }
-            await enterApp(r.user);
-            UI.showToast('Аккаунт создан: ' + Auth.displayLogin(r.user.login));
-          })();
-          break;
-        }
-        case 'login-local': {
-          (async function () {
-            var loginRaw2 = authLoginValue('login');
-            var lr = await Auth.loginLocal(
-              loginRaw2,
-              document.getElementById('loginPass').value
-            );
-            if (!lr.ok) {
-              UI.showToast(lr.error);
-              // Совсем нет аккаунтов — отправляем регистрироваться
-              if (lr.notFound && Auth.accountsCount() === 0) {
-                showAuthGate('register');
-                authLoginFill('reg', loginRaw2);
-              }
-              return;
-            }
-            await enterApp(lr.user);
-            UI.showToast('С возвращением, ' + (lr.user.name || '') + '!');
-          })();
-          break;
-        }
-        case 'show-login': showAuthGate('login'); break;
-        case 'show-register': showAuthGate('register'); break;
-        case 'yandex-login': Auth.startYandexOAuth(); break;
-        case 'save-yandex-clientid': {
-          var input = document.getElementById('authYandexClientId');
-          var val = input ? input.value.trim() : '';
-          if (!val) { UI.showToast('Вставьте ClientID'); break; }
-          Auth.saveYandexClientId(val);
-          // синхронизируем поле в настройках, если оно есть
-          var sInput = document.getElementById('settingYandexClientId');
-          if (sInput) sInput.value = val;
-          UI.showToast('ClientID сохранён — можно входить через Яндекс');
-          var hint = document.getElementById('yandexHint');
-          if (hint) hint.textContent = 'ClientID сохранён ✓';
-          break;
-        }
-        case 'logout':
-          if (!confirm('Выйти из аккаунта? Данные в облаке (Яндекс.Диск) сохранятся.')) break;
-          Auth.logout();
-          showAuthGate('login');
-          UI.showToast('Вы вышли');
-          break;
-        case 'cloud-sync-now': {
-          (async function () {
-            if (!Cloud.canSync()) {
-              UI.showToast('Синхронизация доступна только после входа через Яндекс ID');
-              return;
-            }
-            UI.showToast('Синхронизация…');
-            var res = await Cloud.syncOnLogin();
-            UI.applyTheme();
-            UI.renderSchedule();
-            UI.renderClients();
-            if (res.ok) UI.showToast(res.reason === 'pulled' ? 'Загружено из облака' : 'Сохранено в облако');
-            else UI.showToast('Не удалось синхронизировать');
-            var el = document.getElementById('syncStatus');
-            if (el) el.textContent = Cloud.canSync()
-              ? ('☁ Активна · ' + new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }))
-              : 'Только локально';
-          })();
-          break;
-        }
-        case 'cloud-push-now': {
-          (async function () {
-            if (!Cloud.canSync()) {
-              UI.showToast('Синхронизация доступна только после входа через Яндекс ID');
-              return;
-            }
-            var n = Cloud.localCount();
-            if (n === 0) {
-              UI.showToast('На этом устройстве нет данных — отправлять нечего');
-              return;
-            }
-            if (!confirm('Отправить данные с этого устройства в облако?\n\n' +
-                'Здесь сейчас ' + n + ' записей (клиентов ' + State.clients.length +
-                ', занятий ' + State.classes.length + ').\n' +
-                'То, что лежит в облаке, будет заменено.')) return;
-            UI.showToast('Отправляю…');
-            var res = await Cloud.pushNow();
-            if (res.ok) {
-              UI.showToast('Отправлено в облако: ' + res.count + ' записей');
-              var st = document.getElementById('syncStatus');
-              if (st) st.textContent = '☁ Активна · ' +
-                new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-            } else if (res.reason === 'nothing-to-send') {
-              UI.showToast('Отправлять нечего');
-            } else {
-              UI.showToast('Не удалось отправить — проверьте связь');
-            }
-          })();
-          break;
-        }
-        case 'cloud-diagnose': {
-          (async function () {
-            var box = document.getElementById('cloudDiagnostics');
-            if (!box) return;
-            box.classList.remove('hidden');
-            box.textContent = 'Проверяю…';
-            try {
-              box.textContent = await Cloud.diagnose();
-            } catch (err) {
-              box.textContent = 'Ошибка проверки: ' + err.message;
-            }
-          })();
-          break;
-        }
-      }
+      Controllers.onAction(action, el, e);
     });
+
+    /* —— Страховка от потери данных ——
+       Сохранение раскидано по коду вручную, и однажды его где-нибудь забудут.
+       Android может выгрузить свёрнутое приложение без предупреждения, поэтому
+       при уходе с экрана сохраняемся ещё раз. Лишний раз записать дешевле,
+       чем потерять вечер занятий. */
+    function saveOnLeave() {
+      try { if (State.currentUser) State.persist(); } catch (e) {}
+    }
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden') saveOnLeave();
+    });
+    window.addEventListener('pagehide', saveOnLeave);
 
     document.body.addEventListener('click', function (e) {
       var closer = e.target.closest('[data-close]');
@@ -6752,12 +6912,12 @@
         var cid = UI.$('clientId').value;
         if (!cid || !abonStart.value) return;
         Services.setAbonementStart(cid, abonStart.value);
-        var cl = State.clients.find(function (x) { return x.id === cid; });
+        var cl = State.clientById(cid);
         UI.renderAbonementInfo(cl);
         UI.renderClients();
         UI.renderSchedule();
         if (State.currentDetailClassId) {
-          var dc = State.classes.find(function (x) { return x.id === State.currentDetailClassId; });
+          var dc = State.classById(State.currentDetailClassId);
           if (dc) UI.renderClassDetail(dc);
         }
         UI.showToast('Абонемент действует с ' + Domain.formatDisplayDate(abonStart.value));
