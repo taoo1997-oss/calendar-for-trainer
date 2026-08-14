@@ -2074,7 +2074,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-14 · 45',
+    BUILD: '2026-08-14 · 46',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -5288,12 +5288,23 @@
        схлопывалось, а накладки перескакивали с первой сразу на третью. */
     _pendingBack: 0,
     _closingFromBack: false,
+    /**
+     * Нужно ли добавлять шаги истории под окна.
+     *
+     * В браузере и в установленной PWA — да: только так системная «назад»
+     * доходит до страницы. Во вшитом приложении — нет: там обёртка сама
+     * спрашивает страницу через window.__dtHandleBack(), и лишние шаги
+     * истории только копились бы, заставляя жать «назад» по нескольку раз.
+     */
+    _useHistory() { return typeof window.AndroidBridge === 'undefined'; },
     openModal(id) {
       var el = this.$(id);
       if (!el || el.classList.contains('show')) return;
       el.classList.add('show');
       this._modalStack.push(id);
-      try { history.pushState({ dtModal: id }, ''); } catch (e) {}
+      if (this._useHistory()) {
+        try { history.pushState({ dtModal: id }, ''); } catch (e) {}
+      }
     },
     closeModal(id) {
       var el = this.$(id);
@@ -5302,7 +5313,7 @@
       var at = this._modalStack.lastIndexOf(id);
       if (at === -1) return;
       this._modalStack.splice(at, 1);
-      if (this._closingFromBack) return;   // историю уже отмотал сам браузер
+      if (this._closingFromBack || !this._useHistory()) return;
       this._pendingBack++;
       try { history.back(); } catch (e) { this._pendingBack--; }
     },
