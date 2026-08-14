@@ -825,6 +825,35 @@
     .ask-list-item:last-child { border-bottom: none; }
     .ask-list-when { font-weight: 700; }
     .ask-list-what { color: var(--text-muted); }
+    /* Свой календарь */
+    #calendarModal { z-index: 640; align-items: center; padding: 20px; }
+    .cal-modal { border-radius: 22px; max-width: 360px; padding: 18px 16px 16px; }
+    .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .cal-title { font-size: 1rem; font-weight: 700; color: var(--text); text-transform: capitalize; }
+    .cal-nav {
+      width: 36px; height: 36px; border-radius: 12px; border: 1px solid var(--border);
+      background: var(--card); color: var(--primary); font-size: 0.8rem; cursor: pointer;
+    }
+    .cal-weekdays, .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+    .cal-weekdays span {
+      text-align: center; font-size: 0.68rem; color: var(--text-muted);
+      text-transform: uppercase; padding-bottom: 6px;
+    }
+    .cal-day {
+      position: relative; aspect-ratio: 1; border: none; border-radius: 12px;
+      background: transparent; color: var(--text); font-size: 0.9rem; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .cal-day.other { color: var(--text-muted); opacity: 0.45; }
+    .cal-day.today { border: 1.5px solid var(--primary); font-weight: 700; }
+    .cal-day.selected { background: var(--primary); color: #fff; font-weight: 700; }
+    .cal-day .cal-dot {
+      position: absolute; bottom: 5px; width: 4px; height: 4px; border-radius: 50%;
+      background: var(--primary);
+    }
+    .cal-day.selected .cal-dot { background: #fff; }
+    .cal-day.empty { visibility: hidden; }
+
     /* Окно накладок: две (или больше) карточки на выбор */
     #conflictModal { z-index: 660; align-items: center; padding: 20px; }
     .conflict-modal { border-radius: 22px; max-width: 420px; padding: 20px 16px 16px; }
@@ -1583,10 +1612,7 @@
       </div>
       <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;">
         <button type="button" class="btn btn-secondary btn-sm" data-action="copy-week" style="flex:1;">📋 Копировать неделю</button>
-        <label class="btn btn-secondary btn-sm" style="flex:1;cursor:pointer;margin:0;">
-          📅 Выбрать дату
-          <input type="date" id="weekPicker" style="position:absolute;opacity:0;width:0;height:0;">
-        </label>
+        <button type="button" class="btn btn-secondary btn-sm" data-action="open-calendar" style="flex:1;">📅 Выбрать дату</button>
       </div>
       <div class="week-days" id="weekDays"></div>
       <div class="flex justify-between items-center mb-2" style="gap:8px;flex-wrap:wrap;">
@@ -1970,6 +1996,26 @@
   </div><!-- /appShell -->
 
   <!-- Свой диалог вместо браузерного confirm/alert/prompt -->
+  <!-- Свой календарь: системный выглядел чужеродно и в каждой прошивке по-своему -->
+  <div class="modal-overlay" id="calendarModal">
+    <div class="modal cal-modal">
+      <div class="cal-head">
+        <button type="button" class="cal-nav" data-action="cal-month" data-dir="-1">◀</button>
+        <div class="cal-title" id="calTitle"></div>
+        <button type="button" class="cal-nav" data-action="cal-month" data-dir="1">▶</button>
+      </div>
+      <div class="cal-weekdays">
+        <span>пн</span><span>вт</span><span>ср</span><span>чт</span>
+        <span>пт</span><span>сб</span><span>вс</span>
+      </div>
+      <div class="cal-grid" id="calGrid"></div>
+      <div class="ask-actions" style="margin-top:14px;">
+        <button type="button" class="btn btn-secondary" data-close="calendarModal">Закрыть</button>
+        <button type="button" class="btn btn-primary" data-action="cal-today">Сегодня</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Накладка при копировании: выбираем занятие карточкой, а не текстом -->
   <div class="modal-overlay" id="conflictModal">
     <div class="modal conflict-modal">
@@ -2028,7 +2074,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-13 · 44',
+    BUILD: '2026-08-14 · 45',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -2185,6 +2231,31 @@
    * ========================================================= */
   const Domain = {
     uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); },
+    /**
+     * Сетка месяца для календаря: 6 строк по 7 дней, начиная с понедельника.
+     * Дни соседних месяцев тоже попадают — помечены other, чтобы их
+     * можно было показать бледными, а не оставлять дыры в сетке.
+     */
+    monthGrid(year, month) {
+      var first = new Date(year, month, 1);
+      var start = Domain.getMonday(first);
+      var out = [];
+      for (var i = 0; i < 42; i++) {
+        var d = Domain.addDays(start, i);
+        out.push({
+          date: Domain.formatDate(d),
+          day: d.getDate(),
+          other: d.getMonth() !== month
+        });
+      }
+      return out;
+    },
+    MONTHS_NOM: ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+                 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'],
+    /** Подпись месяца: «Август 2026» */
+    monthTitle(year, month) {
+      return Domain.MONTHS_NOM[month] + ' ' + year;
+    },
     /** Сколько минут два занятия занимают одно и то же время */
     overlapMinutes(startA, durA, startB, durB) {
       var end = Math.min(startA + durA, startB + durB);
@@ -5466,6 +5537,48 @@
       UI.closeModal('conflictModal');
       if (done) done(answer);
     },
+    /* —— Свой календарь ——
+       Системное окно выбора даты выглядит по-разному в каждой прошивке
+       и никак не связано со стилем приложения. Этот рисуется сам:
+       те же цвета, та же тема, и видно, в какие дни есть занятия. */
+    _calYear: null,
+    _calMonth: null,
+    openCalendar() {
+      var base = State.selectedDate
+        ? new Date(State.selectedDate + 'T12:00:00')
+        : new Date();
+      this._calYear = base.getFullYear();
+      this._calMonth = base.getMonth();
+      this.renderCalendar();
+      this.openModal('calendarModal');
+    },
+    shiftCalendarMonth(dir) {
+      var d = new Date(this._calYear, this._calMonth + dir, 1);
+      this._calYear = d.getFullYear();
+      this._calMonth = d.getMonth();
+      this.renderCalendar();
+    },
+    renderCalendar() {
+      var title = UI.$('calTitle');
+      var grid = UI.$('calGrid');
+      if (!title || !grid) return;
+
+      title.textContent = Domain.monthTitle(this._calYear, this._calMonth);
+      var today = Domain.formatDate(new Date());
+      var busy = {};
+      State.classes.forEach(function (c) { busy[c.date] = true; });
+
+      grid.innerHTML = Domain.monthGrid(this._calYear, this._calMonth).map(function (cell) {
+        var cls = 'cal-day' +
+          (cell.other ? ' other' : '') +
+          (cell.date === today ? ' today' : '') +
+          (cell.date === State.selectedDate ? ' selected' : '');
+        return '<button type="button" class="' + cls + '" data-action="cal-pick" data-date="' +
+          cell.date + '">' + cell.day +
+          (busy[cell.date] ? '<span class="cal-dot"></span>' : '') +
+          '</button>';
+      }).join('');
+    },
     /** Плашка «итог дня» под сеткой */
     renderDayTotal(dateStr) {
       var m = Services.dayMoney(dateStr);
@@ -6127,6 +6240,16 @@
       switch (action) {
 
         /* —— РАСПИСАНИЕ И ЗАНЯТИЯ —— */
+        case 'open-calendar': UI.openCalendar(); break;
+        case 'cal-month': UI.shiftCalendarMonth(parseInt(el.dataset.dir, 10)); break;
+        case 'cal-today':
+          Controllers.onJumpToDate(Domain.formatDate(new Date()));
+          UI.closeModal('calendarModal');
+          break;
+        case 'cal-pick':
+          Controllers.onJumpToDate(el.dataset.date);
+          UI.closeModal('calendarModal');
+          break;
         case 'conflict-pick': UI.closeConflict(el.dataset.pick); break;
         case 'conflict-keep-all': UI.closeConflict('all'); break;
         case 'conflict-skip': UI.closeConflict(null); break;
@@ -7309,6 +7432,27 @@
          доступно window.__dt.State / .Services / .Domain / .UI */
       try {
         window.__dt = { CONFIG: CONFIG, State: State, Services: Services, Domain: Domain, UI: UI, Auth: Auth };
+
+      /* —— Системная кнопка «назад» в APK ——
+         В обёртке WebView аппаратная кнопка не доходит до страницы: Android
+         просто закрывает экран. Поэтому обёртка должна спросить у страницы,
+         есть ли что закрывать. Возвращаем true, если окно закрыли сами —
+         тогда приложению закрываться не надо. */
+      window.__dtHandleBack = function () {
+        try {
+          if (UI.$('askModal') && UI.$('askModal').classList.contains('show')) {
+            UI._closeAsk(false);
+            return true;
+          }
+          if (UI.$('conflictModal') && UI.$('conflictModal').classList.contains('show')) {
+            UI._closingFromBack = true;
+            UI.closeConflict(null);
+            UI._closingFromBack = false;
+            return true;
+          }
+          return UI.closeTopModal();
+        } catch (e) { return false; }
+      };
       } catch (e) {}
     } catch (e) {}
 
@@ -7745,7 +7889,6 @@
       });
     }
     UI.$('clientSearch').addEventListener('input', function () { UI.renderClients(); });
-    UI.$('weekPicker').addEventListener('change', function (e) { Controllers.onJumpToDate(e.target.value); });
     UI.$('settingCalendarName').addEventListener('change', function () { Controllers.saveSettingsFromForm(); });
     UI.$('settingColor').addEventListener('change', function () { Controllers.saveSettingsFromForm(); });
     UI.$('styleOptions').addEventListener('click', function (e) {
