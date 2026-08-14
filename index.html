@@ -2028,7 +2028,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-13 · 43',
+    BUILD: '2026-08-13 · 44',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -5209,6 +5209,14 @@
        и уходил назад по истории. Теперь на каждое окно добавляется шаг
        истории, и «назад» просто снимает его. */
     _modalStack: [],
+    /* Сколько наших history.back() ещё не долетело.
+       Браузер отвечает на back() не сразу, а отдельным событием popstate.
+       Без этого счётчика получалось так: закрываем окно программно (back),
+       тут же открываем следующее (push) — и запоздавший popstate закрывает
+       уже новое окно. Именно поэтому «Изменить» открывалось и сразу
+       схлопывалось, а накладки перескакивали с первой сразу на третью. */
+    _pendingBack: 0,
+    _closingFromBack: false,
     openModal(id) {
       var el = this.$(id);
       if (!el || el.classList.contains('show')) return;
@@ -5221,19 +5229,19 @@
       if (!el || !el.classList.contains('show')) return;
       el.classList.remove('show');
       var at = this._modalStack.lastIndexOf(id);
-      if (at !== -1) {
-        this._modalStack.splice(at, 1);
-        // Снимаем шаг истории, который добавляли при открытии
-        if (!UI._backInProgress) { try { history.back(); } catch (e) {} }
-      }
+      if (at === -1) return;
+      this._modalStack.splice(at, 1);
+      if (this._closingFromBack) return;   // историю уже отмотал сам браузер
+      this._pendingBack++;
+      try { history.back(); } catch (e) { this._pendingBack--; }
     },
     /** Закрыть верхнее открытое окно. Вернёт false, если закрывать нечего. */
     closeTopModal() {
       var id = this._modalStack[this._modalStack.length - 1];
       if (!id) return false;
-      UI._backInProgress = true;
+      this._closingFromBack = true;
       this.closeModal(id);
-      UI._backInProgress = false;
+      this._closingFromBack = false;
       return true;
     },
     applyTheme() {
@@ -7601,15 +7609,17 @@
 
     /* Системная кнопка «назад»: закрываем верхнее окно, а не приложение */
     window.addEventListener('popstate', function () {
+      // Это отклик на наш собственный back() — окно уже закрыто, ничего не делаем
+      if (UI._pendingBack > 0) { UI._pendingBack--; return; }
+
       if (UI.$('askModal') && UI.$('askModal').classList.contains('show')) {
         UI._closeAsk(false);
         return;
       }
-      // Окно накладки закрываем через свой метод, иначе обход зависнет
       if (UI.$('conflictModal') && UI.$('conflictModal').classList.contains('show')) {
-        UI._backInProgress = true;
+        UI._closingFromBack = true;
         UI.closeConflict(null);
-        UI._backInProgress = false;
+        UI._closingFromBack = false;
         return;
       }
       UI.closeTopModal();
