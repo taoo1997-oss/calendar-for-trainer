@@ -508,6 +508,38 @@
       -webkit-appearance: none; appearance: none; cursor: pointer;
     }
     .club-month-select:focus { outline: none; }
+
+    /* Свой список выбора вместо системного <select>: тот приходил
+       чужим окном с чужими шрифтами и своей темой. */
+    #pickSheet { z-index: 700; }
+    .pick-list { margin: 0 -6px; }
+    .pick-item {
+      display: flex; align-items: center; gap: 12px; width: 100%;
+      padding: 14px 12px; border: none; border-radius: 14px;
+      background: none; color: var(--text); cursor: pointer;
+      font-family: inherit; font-size: 0.95rem; text-align: left;
+    }
+    .pick-item:active { background: var(--primary-light); }
+    .pick-item.active { background: var(--primary-light); font-weight: 600; }
+    .pick-item-label { flex: 1; min-width: 0; }
+    .pick-item-note { font-size: 0.78rem; color: var(--text-muted); }
+    .pick-item-mark { color: var(--primary); font-size: 1rem; opacity: 0; }
+    .pick-item.active .pick-item-mark { opacity: 1; }
+
+    /* Кнопка, которая выглядит как поле ввода, но открывает свой список */
+    .select-btn {
+      display: flex; align-items: center; gap: 10px; width: 100%;
+      padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px;
+      background: var(--card); color: var(--text); cursor: pointer;
+      font-family: inherit; font-size: 0.9375rem; text-align: left;
+    }
+    .select-btn span:first-child { flex: 1; min-width: 0; }
+    .select-btn-caret { color: var(--text-muted); font-size: 0.7rem; }
+
+    /* Настройки разделены на три вкладки — иначе один длинный свиток */
+    .settings-tabs { margin-bottom: 22px; }
+    .settings-group { display: none; }
+    .settings-group.active { display: block; }
     .club-archive-note {
       display: flex; align-items: center; justify-content: space-between; gap: 8px;
       margin-bottom: 10px; padding: 8px 10px 8px 12px; border-radius: 12px;
@@ -1702,7 +1734,7 @@
     <div id="section-clients" class="section" data-screen="clients">
       <div class="club-month-bar">
         <button type="button" class="club-month-arrow" data-action="money-month-prev" aria-label="Предыдущий месяц">◀</button>
-        <select id="moneyMonthSelect" class="club-month-select"></select>
+        <button type="button" id="moneyMonthSelect" class="club-month-select" data-action="pick-money-month"></button>
         <button type="button" class="club-month-arrow" data-action="money-month-next" aria-label="Следующий месяц">▶</button>
       </div>
       <div class="money-card" id="moneyCard"></div>
@@ -1729,7 +1761,7 @@
     <div id="section-club" class="section" data-screen="club">
       <div class="club-month-bar">
         <button type="button" class="club-month-arrow" data-action="club-month-prev" aria-label="Предыдущий месяц">◀</button>
-        <select id="clubMonthSelect" class="club-month-select"></select>
+        <button type="button" id="clubMonthSelect" class="club-month-select" data-action="pick-club-month"></button>
         <button type="button" class="club-month-arrow" data-action="club-month-next" aria-label="Следующий месяц">▶</button>
       </div>
       <div class="club-archive-note hidden" id="clubArchiveNote">
@@ -1744,18 +1776,19 @@
     </div>
 
     <div id="section-settings" class="section" data-screen="settings">
+      <div class="seg-toggle settings-tabs" id="settingsTabs">
+        <button type="button" class="seg-btn active" data-action="settings-tab" data-settings-tab="account">Аккаунт</button>
+        <button type="button" class="seg-btn" data-action="settings-tab" data-settings-tab="look">Оформление</button>
+        <button type="button" class="seg-btn" data-action="settings-tab" data-settings-tab="data">Данные</button>
+      </div>
+
+      <div class="settings-group active" data-settings-group="account">
       <div class="card auth-card">
         <div class="avatar-big" id="profileAvatar">?</div>
         <div style="font-weight:700;font-size:1.1rem;" id="profileName">Гость</div>
         <div class="text-sm text-muted" id="profilePhone"></div>
         <button type="button" class="btn btn-secondary btn-sm mt-3" data-action="open-auth">Редактировать профиль</button>
         <button type="button" class="btn btn-danger btn-sm mt-2" data-action="logout">Выйти из аккаунта</button>
-      </div>
-      <div class="settings-block">
-        <h3>Название календаря</h3>
-        <div class="form-group" style="margin:0;">
-          <input type="text" id="settingCalendarName" placeholder="Например: Сальса группа А">
-        </div>
       </div>
       <div class="settings-block">
         <h3>Язык</h3>
@@ -1766,10 +1799,25 @@
       </div>
       <div class="settings-block">
         <h3>Валюта</h3>
-        <div class="form-group" style="margin:0;">
-          <select id="settingCurrency" data-no-i18n></select>
-        </div>
+        <button type="button" class="select-btn" data-action="pick-currency" data-no-i18n>
+          <span id="settingCurrency">—</span>
+          <span class="select-btn-caret">▾</span>
+        </button>
         <p class="text-sm text-muted" style="margin-top:8px;font-size:0.72rem;">Меняется только знак валюты. Суммы не пересчитываются по курсу — в журнале остаются те деньги, которые вы получили.</p>
+      </div>
+      <div class="settings-block">
+        <h3>Обучение</h3>
+        <button type="button" class="btn btn-secondary btn-block btn-sm" data-action="tour-restart">🎓 Пройти обучение заново</button>
+        <p class="text-sm text-muted" style="margin-top:8px;font-size:0.72rem;">Короткий тур по разделам приложения — 6 экранов.</p>
+      </div>
+      </div>
+
+      <div class="settings-group" data-settings-group="look">
+      <div class="settings-block">
+        <h3>Название календаря</h3>
+        <div class="form-group" style="margin:0;">
+          <input type="text" id="settingCalendarName" placeholder="Например: Сальса группа А">
+        </div>
       </div>
       <div class="settings-block">
         <h3>Тема</h3>
@@ -1803,13 +1851,9 @@
           <div class="style-option" data-style="cards"><strong>Карточки</strong><span>Список занятий крупными карточками</span></div>
         </div>
       </div>
-
-
-      <div class="settings-block">
-        <h3>Обучение</h3>
-        <button type="button" class="btn btn-secondary btn-block btn-sm" data-action="tour-restart">🎓 Пройти обучение заново</button>
-        <p class="text-sm text-muted" style="margin-top:8px;font-size:0.72rem;">Короткий тур по разделам приложения — 6 экранов.</p>
       </div>
+
+      <div class="settings-group" data-settings-group="data">
       <div class="settings-block">
         <h3>Контакты устройства</h3>
         <p class="text-sm text-muted mb-2" id="contactsSettingsStatus">Проверка…</p>
@@ -1834,6 +1878,7 @@
         <input type="file" id="importFile" accept="application/json" class="hidden">
         <button type="button" class="btn btn-secondary btn-block btn-sm mt-2" data-action="undo-cleanup">↩️ Отменить последнее удаление</button>
         <p class="text-sm text-muted" style="margin-top:6px;font-size:0.7rem;">Вернёт расписание к состоянию до очистки дня.</p>
+      </div>
       </div>
 
       <!-- Версия сборки — всегда в самом низу страницы -->
@@ -2144,6 +2189,17 @@
     </div>
   </div>
 
+  <!-- Свой список выбора: валюта, месяц, группа -->
+  <div class="modal-overlay" id="pickSheet">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title" id="pickTitle">Выбор</div>
+        <button type="button" class="modal-close" data-close="pickSheet">×</button>
+      </div>
+      <div class="pick-list" id="pickList" data-no-i18n></div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="ccSheet">
     <div class="modal">
       <div class="modal-header">
@@ -2184,7 +2240,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-15 · 48',
+    BUILD: '2026-08-15 · 49',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -2812,6 +2868,10 @@
     'Название календаря': 'Calendar name',
     'Язык': 'Language',
     'Валюта': 'Currency',
+    'Месяц': 'Month',
+    'Выбор': 'Choose',
+    'Аккаунт': 'Account',
+    'Оформление': 'Appearance',
     'Меняется только знак валюты. Суммы не пересчитываются по курсу — в журнале остаются те деньги, которые вы получили.':
       'Only the currency symbol changes. Amounts are not converted at any exchange rate — the log keeps the money you actually took.',
     'Тема': 'Theme',
@@ -3225,14 +3285,8 @@
     },
 
     fillSelect() {
-      var sel = document.getElementById('settingCurrency');
-      if (!sel) return;
-      var self = this;
-      sel.innerHTML = this.LIST.map(function (c) {
-        return '<option value="' + c.code + '"' + (c.code === self.code ? ' selected' : '') + '>' +
-          Domain.escapeHtml(self.label(c)) + '</option>';
-      }).join('');
-      sel.value = this.code;
+      var el = document.getElementById('settingCurrency');
+      if (el) el.textContent = this.label(this.current());
     }
   };
 
@@ -6240,6 +6294,53 @@
       o.icon = o.icon || '✍️';
       return this.ask(o);
     },
+    /* Свой выбор из списка. Возвращает Promise со значением или null.
+       Системный <select> рисовался окном ОС — чужие шрифты, чужая тема. */
+    _pickResolve: null,
+    pick(opts) {
+      var o = opts || {};
+      var sheet = this.$('pickSheet');
+      var list = this.$('pickList');
+      if (!sheet || !list) return Promise.resolve(null);
+      if (UI._pickResolve) { var stale = UI._pickResolve; UI._pickResolve = null; stale(null); }
+
+      this.$('pickTitle').textContent = I18N.t(o.title || 'Выбор');
+      list.innerHTML = (o.options || []).map(function (op, i) {
+        return '<button type="button" class="pick-item' + (op.value === o.value ? ' active' : '') +
+          '" data-pick-index="' + i + '">' +
+          '<span class="pick-item-label">' + Domain.escapeHtml(op.label) + '</span>' +
+          (op.note ? '<span class="pick-item-note">' + Domain.escapeHtml(op.note) + '</span>' : '') +
+          '<span class="pick-item-mark">✓</span>' +
+          '</button>';
+      }).join('');
+
+      UI._pickOptions = o.options || [];
+      this.openModal('pickSheet');
+
+      // Выбранное подводим под палец, иначе в списке месяцев его не видно
+      setTimeout(function () {
+        var act = list.querySelector('.pick-item.active');
+        if (act && act.scrollIntoView) act.scrollIntoView({ block: 'center' });
+      }, 40);
+
+      return new Promise(function (resolve) { UI._pickResolve = resolve; });
+    },
+    closePick(value) {
+      this.closeModal('pickSheet');
+      var done = UI._pickResolve;
+      UI._pickResolve = null;
+      if (done) done(value === undefined ? null : value);
+    },
+    /** Список месяцев для выбора — общий у денег и клуба */
+    monthOptions(selected) {
+      var cur = Domain.currentMonthKey();
+      var opts = Services.clubMonthOptions();
+      if (selected && opts.indexOf(selected) === -1) opts.push(selected);
+      opts.sort().reverse();
+      return opts.map(function (k) {
+        return { value: k, label: Domain.monthLabel(k), note: k === cur ? I18N.t('сейчас') : '' };
+      });
+    },
     showToast(msg) {
       var t = this.$('toast');
       if (!t) return;
@@ -6569,6 +6670,20 @@
       this.$('profilePhone').textContent = (login || 'Профиль') + via;
       this.$('profileAvatar').textContent = (name || '?')[0].toUpperCase();
     },
+    /* Настройки живут тремя вкладками: один длинный свиток читать невозможно. */
+    switchSettingsTab(name) {
+      if (!name) return;
+      State.settingsTab = name;
+      document.querySelectorAll('[data-settings-tab]').forEach(function (b) {
+        b.classList.toggle('active', b.dataset.settingsTab === name);
+      });
+      document.querySelectorAll('[data-settings-group]').forEach(function (g) {
+        g.classList.toggle('active', g.dataset.settingsGroup === name);
+      });
+      // Вкладка сменилась — начинаем читать её сверху, а не с середины
+      var sec = this.$('section-settings');
+      if (sec && sec.scrollIntoView) sec.scrollIntoView({ block: 'start' });
+    },
     switchTab(tab) {
       document.querySelectorAll('.nav-item').forEach(function (t) {
         t.classList.toggle('active', t.dataset.tab === tab);
@@ -6582,6 +6697,7 @@
       if (tab === 'schedule') this.renderSchedule();
       if (tab === 'club') this.renderClub();
       if (tab === 'settings') {
+        this.switchSettingsTab(State.settingsTab || 'account');
         this.applyTheme();
         this.updateContactsStatus();
         var el = document.getElementById('syncStatus');
@@ -6999,14 +7115,7 @@
       var sel = this.$('moneyMonthSelect');
       if (sel) {
         var cur = Domain.currentMonthKey();
-        var opts = Services.clubMonthOptions();
-        if (opts.indexOf(key) === -1) opts.push(key);
-        opts.sort().reverse();
-        sel.innerHTML = opts.map(function (k) {
-          return '<option value="' + k + '"' + (k === key ? ' selected' : '') + '>' +
-            Domain.monthLabel(k) + (k === cur ? ' · сейчас' : '') + '</option>';
-        }).join('');
-        sel.value = key;
+        sel.textContent = Domain.monthLabel(key) + (key === cur ? ' · сейчас' : '');
       }
 
       var m = Services.monthMoney(key);
@@ -7218,13 +7327,8 @@
       var sel = this.$('clubMonthSelect');
       var key = this.clubMonth();
       if (sel) {
-        var opts = Services.clubMonthOptions();
         var cur = Domain.currentMonthKey();
-        sel.innerHTML = opts.map(function (k) {
-          var label = Domain.monthLabel(k) + (k === cur ? ' · сейчас' : '');
-          return '<option value="' + k + '"' + (k === key ? ' selected' : '') + '>' + label + '</option>';
-        }).join('');
-        sel.value = key;
+        sel.textContent = Domain.monthLabel(key) + (key === cur ? ' · сейчас' : '');
       }
       var note = this.$('clubArchiveNote');
       if (note) note.classList.toggle('hidden', !this.isClubArchive());
@@ -8004,6 +8108,26 @@
         case 'import-trigger': UI.$('importFile').click(); break;
 
         /* —— Язык и обучение —— */
+        case 'pick-currency':
+          UI.pick({
+            title: 'Валюта',
+            value: Money.code,
+            options: Money.LIST.map(function (c) {
+              return { value: c.code, label: Money.label(c) };
+            })
+          }).then(function (code) { if (code) Money.set(code); });
+          break;
+        case 'pick-money-month':
+          UI.pick({
+            title: 'Месяц', value: UI.moneyMonth(), options: UI.monthOptions(UI.moneyMonth())
+          }).then(function (k) { if (k) Controllers.setMoneyMonth(k); });
+          break;
+        case 'pick-club-month':
+          UI.pick({
+            title: 'Месяц', value: UI.clubMonth(), options: UI.monthOptions(UI.clubMonth())
+          }).then(function (k) { if (k) Controllers.setClubMonth(k); });
+          break;
+        case 'settings-tab': UI.switchSettingsTab(el.dataset.settingsTab); break;
         case 'lang-pick':
           I18N.set(el.dataset.langPick);
           if (Tour._open) Tour.render();
@@ -8797,6 +8921,7 @@
       window.__dtHandleBack = function () {
         try {
           if (Tour._open) { Tour.close(); return true; }
+          if (UI._pickResolve) { UI.closePick(null); return true; }
           if (UI.$('askModal') && UI.$('askModal').classList.contains('show')) {
             UI._closeAsk(false);
             return true;
@@ -9119,6 +9244,7 @@
       if (UI._pendingBack > 0) { UI._pendingBack--; return; }
 
       if (Tour._open) { Tour.close(); return; }
+      if (UI._pickResolve) { UI.closePick(null); return; }
 
       if (UI.$('askModal') && UI.$('askModal').classList.contains('show')) {
         UI._closeAsk(false);
@@ -9226,12 +9352,7 @@
 
     var incomeForm = UI.$('incomeForm');
     if (incomeForm) incomeForm.addEventListener('submit', Controllers.saveIncome);
-    var moneyMonthSel = UI.$('moneyMonthSelect');
-    if (moneyMonthSel) {
-      moneyMonthSel.addEventListener('change', function () {
-        Controllers.setMoneyMonth(moneyMonthSel.value);
-      });
-    }
+
     var groupChk = UI.$('classIsGroup');
     if (groupChk) groupChk.addEventListener('change', function () { UI.updatePriceLabel(); });
     var themeBox = UI.$('themeOptions');
@@ -9246,17 +9367,25 @@
         UI.applyTheme();
       });
     }
-    var clubMonthSel = UI.$('clubMonthSelect');
-    if (clubMonthSel) {
-      clubMonthSel.addEventListener('change', function () {
-        Controllers.setClubMonth(clubMonthSel.value);
-      });
-    }
+
     UI.$('clientSearch').addEventListener('input', function () { UI.renderClients(); });
     Money.fillSelect();
-    var currencySel = UI.$('settingCurrency');
-    if (currencySel) {
-      currencySel.addEventListener('change', function () { Money.set(currencySel.value); });
+
+    // Клик по строке в своём списке выбора
+    var pickList = UI.$('pickList');
+    if (pickList) {
+      pickList.addEventListener('click', function (e) {
+        var item = e.target.closest('[data-pick-index]');
+        if (!item) return;
+        var op = (UI._pickOptions || [])[parseInt(item.dataset.pickIndex, 10)];
+        UI.closePick(op ? op.value : null);
+      });
+    }
+    var pickOverlay = UI.$('pickSheet');
+    if (pickOverlay) {
+      pickOverlay.addEventListener('click', function (e) {
+        if (e.target === pickOverlay) UI.closePick(null);
+      });
     }
     UI.$('settingCalendarName').addEventListener('change', function () { Controllers.saveSettingsFromForm(); });
     UI.$('settingColor').addEventListener('change', function () { Controllers.saveSettingsFromForm(); });
