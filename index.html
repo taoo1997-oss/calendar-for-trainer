@@ -358,6 +358,8 @@
       transition: background 0.15s, color 0.15s;
     }
     .seg-btn.active { background: var(--card); color: var(--text); box-shadow: var(--shadow); }
+    .seg-btn:focus { outline: none; }
+    .seg-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
     /* Поле телефона: кнопка страны + только цифры */
     .phone-field { display: flex; gap: 8px; align-items: stretch; }
@@ -537,7 +539,16 @@
     .select-btn-caret { color: var(--text-muted); font-size: 0.7rem; }
 
     /* Настройки разделены на три вкладки — иначе один длинный свиток */
-    .settings-tabs { margin-bottom: 22px; }
+    .settings-tabs {
+      margin-bottom: 22px;
+      /* Держим переключатель под шапкой: в разделе «Данные» он иначе
+         уезжает вверх, и вернуться к другим вкладкам можно только скроллом. */
+      position: sticky;
+      top: calc(var(--sat) + 58px);
+      z-index: 60;
+      background: var(--bg);
+      box-shadow: 0 6px 10px -8px rgba(0,0,0,0.25);
+    }
     .settings-group { display: none; }
     .settings-group.active { display: block; }
     .club-archive-note {
@@ -2240,7 +2251,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-15 · 49',
+    BUILD: '2026-08-15 · 50',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -6671,7 +6682,7 @@
       this.$('profileAvatar').textContent = (name || '?')[0].toUpperCase();
     },
     /* Настройки живут тремя вкладками: один длинный свиток читать невозможно. */
-    switchSettingsTab(name) {
+    switchSettingsTab(name, byUser) {
       if (!name) return;
       State.settingsTab = name;
       document.querySelectorAll('[data-settings-tab]').forEach(function (b) {
@@ -6680,9 +6691,14 @@
       document.querySelectorAll('[data-settings-group]').forEach(function (g) {
         g.classList.toggle('active', g.dataset.settingsGroup === name);
       });
-      // Вкладка сменилась — начинаем читать её сверху, а не с середины
-      var sec = this.$('section-settings');
-      if (sec && sec.scrollIntoView) sec.scrollIntoView({ block: 'start' });
+      /* Разделы разной высоты: когда прячется длинный, страница становится
+         короче, и браузер сам подтягивает прокрутку — экран будто прыгает.
+         Поэтому после нажатия честно уходим наверх. Просто открытие
+         «Настроек» прокрутку не трогает: там она и так наверху. */
+      if (byUser) {
+        try { window.scrollTo({ top: 0, behavior: 'smooth' }); }
+        catch (e) { window.scrollTo(0, 0); }
+      }
     },
     switchTab(tab) {
       document.querySelectorAll('.nav-item').forEach(function (t) {
@@ -8127,7 +8143,7 @@
             title: 'Месяц', value: UI.clubMonth(), options: UI.monthOptions(UI.clubMonth())
           }).then(function (k) { if (k) Controllers.setClubMonth(k); });
           break;
-        case 'settings-tab': UI.switchSettingsTab(el.dataset.settingsTab); break;
+        case 'settings-tab': UI.switchSettingsTab(el.dataset.settingsTab, true); break;
         case 'lang-pick':
           I18N.set(el.dataset.langPick);
           if (Tour._open) Tour.render();
