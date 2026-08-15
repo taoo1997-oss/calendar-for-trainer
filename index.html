@@ -1295,9 +1295,79 @@
     }
     .auth-gate.hidden { display: none !important; }
     .auth-gate-card {
+      position: relative;
       width: 100%; max-width: 360px; background: var(--card);
       border-radius: 20px; padding: 28px 22px; border: 1px solid var(--border);
       box-shadow: var(--shadow);
+    }
+
+    /* Переключатель языка. На входе — правый верхний угол карточки:
+       человек видит его до того, как начнёт читать форму. */
+    .lang-switch {
+      display: inline-flex; gap: 2px; padding: 3px;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 999px;
+    }
+    .lang-switch.corner {
+      position: absolute; top: 14px; right: 14px; z-index: 2;
+    }
+    .lang-btn {
+      min-width: 40px; padding: 6px 10px; border: none; border-radius: 999px;
+      background: none; color: var(--text-muted); cursor: pointer;
+      font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em;
+      transition: background 0.15s, color 0.15s;
+    }
+    .lang-btn.active {
+      background: var(--primary); color: #fff; box-shadow: var(--shadow);
+    }
+    .settings-block .lang-switch { display: flex; width: 100%; border-radius: 12px; }
+    .settings-block .lang-btn { flex: 1; border-radius: 9px; padding: 10px 8px; font-size: 0.8rem; }
+
+    /* —— Обучение после регистрации —— */
+    .tour-overlay {
+      position: fixed; inset: 0; z-index: 700;
+      display: none; align-items: center; justify-content: center;
+      padding: calc(20px + var(--sat, 0px)) 20px calc(20px + var(--sab, 0px));
+      background: rgba(10, 8, 9, 0.55);
+      -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+    }
+    .tour-overlay.show { display: flex; }
+    .tour-card {
+      width: 100%; max-width: 380px; background: var(--card);
+      border: 1px solid var(--border); border-radius: 24px;
+      padding: 26px 22px 20px; box-shadow: 0 24px 60px rgba(0,0,0,0.28);
+      animation: tourIn 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    @keyframes tourIn {
+      from { opacity: 0; transform: translateY(14px) scale(0.985); }
+      to   { opacity: 1; transform: none; }
+    }
+    .tour-head {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .tour-step { font-size: 0.7rem; font-weight: 700; color: var(--text-muted); letter-spacing: 0.06em; }
+    .tour-stage { text-align: center; }
+    .tour-icon {
+      font-size: 2.6rem; line-height: 1; margin-bottom: 14px;
+      animation: tourPop 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    @keyframes tourPop { from { transform: scale(0.75); opacity: 0; } to { transform: none; opacity: 1; } }
+    .tour-title { font-size: 1.2rem; font-weight: 700; margin-bottom: 10px; }
+    .tour-text {
+      font-size: 0.875rem; line-height: 1.6; color: var(--text-muted);
+      min-height: 108px;
+    }
+    .tour-dots { display: flex; justify-content: center; gap: 7px; margin: 18px 0 16px; }
+    .tour-dot {
+      width: 7px; height: 7px; padding: 0; border: none; border-radius: 999px;
+      background: var(--border); cursor: pointer; transition: width 0.2s, background 0.2s;
+    }
+    .tour-dot.active { width: 22px; background: var(--primary); }
+    .tour-actions { display: flex; flex-direction: column; gap: 4px; }
+    .tour-skip {
+      padding: 10px; font-size: 0.8rem; color: var(--text-muted);
+      background: none; border: none; cursor: pointer;
     }
     .auth-gate-logo { font-size: 2.2rem; text-align: center; margin-bottom: 8px; }
     .auth-gate-title { text-align: center; font-size: 1.15rem; font-weight: 600; margin-bottom: 4px; }
@@ -1524,6 +1594,10 @@
   <!-- AUTH GATE: регистрация / вход -->
   <div id="authGate" class="auth-gate hidden">
     <div class="auth-gate-card">
+      <div class="lang-switch corner" data-no-i18n>
+        <button type="button" class="lang-btn" data-action="lang-pick" data-lang-pick="ru">RU</button>
+        <button type="button" class="lang-btn" data-action="lang-pick" data-lang-pick="en">EN</button>
+      </div>
       <div class="auth-gate-logo">💃</div>
       <h1 class="auth-gate-title">Танцевальный тренер</h1>
       <p class="auth-gate-sub" id="authGateSub">Создайте профиль, чтобы сохранять клиентов и расписание</p>
@@ -1681,6 +1755,13 @@
         </div>
       </div>
       <div class="settings-block">
+        <h3>Язык</h3>
+        <div class="lang-switch" data-no-i18n>
+          <button type="button" class="lang-btn" data-action="lang-pick" data-lang-pick="ru">Русский</button>
+          <button type="button" class="lang-btn" data-action="lang-pick" data-lang-pick="en">English</button>
+        </div>
+      </div>
+      <div class="settings-block">
         <h3>Тема</h3>
         <div class="theme-options" id="themeOptions">
           <button type="button" class="theme-option" data-theme-pick="light">
@@ -1714,6 +1795,11 @@
       </div>
 
 
+      <div class="settings-block">
+        <h3>Обучение</h3>
+        <button type="button" class="btn btn-secondary btn-block btn-sm" data-action="tour-restart">🎓 Пройти обучение заново</button>
+        <p class="text-sm text-muted" style="margin-top:8px;font-size:0.72rem;">Короткий тур по разделам приложения — 6 экранов.</p>
+      </div>
       <div class="settings-block">
         <h3>Контакты устройства</h3>
         <p class="text-sm text-muted mb-2" id="contactsSettingsStatus">Проверка…</p>
@@ -2061,6 +2147,20 @@
     </div>
   </div>
 
+  <!-- Обучение: показывается один раз после регистрации -->
+  <div class="tour-overlay" id="tourOverlay">
+    <div class="tour-card">
+      <div class="tour-head" data-no-i18n>
+        <div class="tour-step" id="tourStep">1 / 6</div>
+        <div class="lang-switch">
+          <button type="button" class="lang-btn" data-action="lang-pick" data-lang-pick="ru">RU</button>
+          <button type="button" class="lang-btn" data-action="lang-pick" data-lang-pick="en">EN</button>
+        </div>
+      </div>
+      <div id="tourCard"></div>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
 
   <script>
@@ -2074,7 +2174,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-14 · 46',
+    BUILD: '2026-08-15 · 47',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -2090,6 +2190,931 @@
     /* ClientID можно задать здесь или в Настройках */
     YANDEX_CLIENT_ID: 'ca84af634c284a99b2a6ab6ce1d9b378'
   };
+
+  /* =========================================================
+   * 1b. I18N — язык интерфейса
+   * ---------------------------------------------------------
+   * Ключ словаря — сама русская строка. Так ничего не теряется:
+   * если перевода нет, показывается русский оригинал, а не «key.not.found».
+   *
+   * Перевод идёт на трёх уровнях:
+   *   1) EN      — точные совпадения (кнопки, заголовки, подписи);
+   *   2) RULES   — строки, собранные из кусков («Скопировано: 5»);
+   *   3) applyDom — проход по DOM, чтобы не переписывать 800 строк кода.
+   * Наблюдатель за DOM переводит всё, что дорисовывается на лету.
+   * ========================================================= */
+  const I18N = {
+    KEY: 'dt_lang',
+    lang: 'ru',
+    _observer: null,
+    _busy: false,
+
+    detect() {
+      var saved = '';
+      try { saved = localStorage.getItem(this.KEY) || ''; } catch (e) {}
+      if (saved === 'ru' || saved === 'en') return saved;
+      var nav = '';
+      try { nav = (navigator.language || navigator.userLanguage || '').toLowerCase(); } catch (e) {}
+      // Русский — для ru/be/kk/uk/uz/ky; остальным даём английский.
+      return /^(ru|be|kk|uk|uz|ky|hy|az|tg|mo)/.test(nav) ? 'ru' : 'en';
+    },
+
+    init() {
+      this.lang = this.detect();
+      this.applyLangAttrs();
+    },
+
+    applyLangAttrs() {
+      try {
+        document.documentElement.setAttribute('lang', this.lang);
+        document.documentElement.setAttribute('data-lang', this.lang);
+      } catch (e) {}
+    },
+
+    set(lang, opts) {
+      if (lang !== 'ru' && lang !== 'en') return;
+      if (lang === this.lang) { this.syncSwitches(); return; }
+      this.lang = lang;
+      try { localStorage.setItem(this.KEY, lang); } catch (e) {}
+      this.applyLangAttrs();
+      this.retranslate();
+      this.syncSwitches();
+      if (!opts || opts.rerender !== false) {
+        try {
+          if (typeof UI !== 'undefined' && State && State.currentUser) {
+            UI.applyTheme();
+            UI.renderSchedule();
+            UI.renderClients();
+            UI.renderClub();
+          }
+        } catch (e) {}
+      }
+    },
+
+    syncSwitches() {
+      var self = this;
+      try {
+        document.querySelectorAll('[data-lang-pick]').forEach(function (b) {
+          b.classList.toggle('active', b.dataset.langPick === self.lang);
+        });
+      } catch (e) {}
+    },
+
+    /* —— Перевод одной строки —— */
+    t(s) {
+      if (this.lang === 'ru' || s == null) return s;
+      var str = String(s);
+      if (!str) return str;
+      var hit = this.EN[str];
+      if (hit != null) return hit;
+
+      // Пробелы по краям сохраняем: они держат вёрстку («Клиенты · »).
+      var trimmed = str.trim();
+      if (trimmed !== str) {
+        var inner = this.EN[trimmed];
+        if (inner == null) inner = this._rule(trimmed);
+        if (inner != null) {
+          var lead = str.slice(0, str.indexOf(trimmed.charAt(0)));
+          var tail = str.slice(lead.length + trimmed.length);
+          return lead + inner + tail;
+        }
+        return str;
+      }
+      var byRule = this._rule(trimmed);
+      return byRule == null ? str : byRule;
+    },
+
+    /* Многие подписи склеены через « · ». Переводим по кускам:
+       «занятия 3 000 ₽ (2 чел.) · абонементы 6 000 ₽» разбирается целиком. */
+    _segments(str) {
+      if (str.indexOf(' · ') === -1) return null;
+      var parts = str.split(' · ');
+      var changed = false;
+      var self = this;
+      var out = parts.map(function (p) {
+        var hit = self.EN[p];
+        if (hit == null) hit = self._rule(p, true);
+        if (hit == null) return p;
+        changed = true;
+        return hit;
+      });
+      return changed ? out.join(' · ') : null;
+    },
+
+    _rule(str, noSegments) {
+      if (!noSegments) {
+        var seg = this._segments(str);
+        if (seg != null) return seg;
+      }
+      /* «🎟 абонемент действует с 14 авг» — значок несёт смысл,
+         но переводить надо то, что после него. */
+      var icon = /^([^0-9A-Za-zА-Яа-яЁё]+\s)(\S[\s\S]*)$/.exec(str);
+      if (icon) {
+        var restHit = this.EN[icon[2]];
+        if (restHit == null) restHit = this._rule(icon[2], true);
+        if (restHit != null) return icon[1] + restHit;
+      }
+      for (var i = 0; i < this.RULES.length; i++) {
+        var r = this.RULES[i];
+        r[0].lastIndex = 0;
+        var m = r[0].exec(str);
+        if (m) {
+          return typeof r[1] === 'function'
+            ? r[1].call(this, m)
+            : r[1].replace(/\$(\d)/g, function (_, n) { return m[Number(n)] || ''; });
+        }
+      }
+      return null;
+    },
+
+    /* Многострочный текст переводим построчно — так ловятся списки в диалогах. */
+    tBlock(s) {
+      if (this.lang === 'ru' || s == null) return s;
+      var str = String(s);
+      if (str.indexOf('\n') === -1) return this.t(str);
+      var self = this;
+      return str.split('\n').map(function (line) { return self.t(line); }).join('\n');
+    },
+
+    /* —— Множественное число —— */
+    PLURAL_EN: {
+      'ученик': ['student', 'students'],
+      'оплата': ['payment', 'payments'],
+      'абонемент': ['pass', 'passes'],
+      'запись': ['entry', 'entries'],
+      'занятие': ['class', 'classes'],
+      'занятий': ['class', 'classes'],
+      'человек': ['person', 'people']
+    },
+    plural(n, one, few, many) {
+      if (this.lang === 'en') {
+        var pair = this.PLURAL_EN[one] || [one, many];
+        return Math.abs(n) === 1 ? pair[0] : pair[1];
+      }
+      var a = Math.abs(n) % 100, b = a % 10;
+      if (a > 10 && a < 20) return many;
+      if (b > 1 && b < 5) return few;
+      if (b === 1) return one;
+      return many;
+    },
+
+    /* —— Даты —— */
+    MONTHS_NOM: {
+      ru: ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+           'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'],
+      en: ['January', 'February', 'March', 'April', 'May', 'June',
+           'July', 'August', 'September', 'October', 'November', 'December']
+    },
+    MONTHS_GEN: {
+      ru: ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+           'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'],
+      en: ['January', 'February', 'March', 'April', 'May', 'June',
+           'July', 'August', 'September', 'October', 'November', 'December']
+    },
+    MONTHS_SHORT: {
+      ru: ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'],
+      en: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    },
+    // Воскресенье первым — под getDay()
+    DAYS_SHORT_SUN: {
+      ru: ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'],
+      en: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    },
+    // Понедельник первым — под сетку недели и календарь
+    DAYS_SHORT_MON: {
+      ru: ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'],
+      en: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    },
+    monthsNom() { return this.MONTHS_NOM[this.lang]; },
+    monthsGen() { return this.MONTHS_GEN[this.lang]; },
+    monthsShort() { return this.MONTHS_SHORT[this.lang]; },
+    daysSun() { return this.DAYS_SHORT_SUN[this.lang]; },
+    daysMon() { return this.DAYS_SHORT_MON[this.lang]; },
+    locale() { return this.lang === 'en' ? 'en-GB' : 'ru-RU'; },
+    // Для сортировки имён: en-US ставит латиницу правильно, ru-RU — кириллицу
+    collate() { return this.lang === 'en' ? 'en' : 'ru'; },
+
+    /* Название страны в списке телефонных кодов.
+       Intl.DisplayNames знает все 228 — свой словарь не нужен. */
+    _cnCache: {},
+    countryName(c) {
+      if (!c) return '';
+      if (this.lang === 'ru') return c.n;
+      if (this._cnCache[c.c]) return this._cnCache[c.c];
+      var out = c.n;
+      try {
+        var dn = new Intl.DisplayNames(['en'], { type: 'region' });
+        out = dn.of(c.c) || c.n;
+      } catch (e) { out = c.n; }
+      this._cnCache[c.c] = out;
+      return out;
+    },
+
+    /* =====================================================
+     * Проход по DOM
+     * -----------------------------------------------------
+     * Держим оригинал в data-i18n-ru / кэше текстовых узлов,
+     * чтобы переключение обратно на русский было точным,
+     * а не «обратным переводом».
+     * ===================================================== */
+    ATTRS: ['placeholder', 'title', 'aria-label'],
+    SKIP_TAGS: { SCRIPT: 1, STYLE: 1, TEXTAREA: 1, CODE: 1, PRE: 1 },
+
+    applyDom(root) {
+      if (this._busy) return;
+      this._busy = true;
+      try {
+        this._walk(root || document.body);
+      } catch (e) {
+        console.warn('[I18N.applyDom]', e);
+      }
+      this._busy = false;
+    },
+
+    _walk(node) {
+      if (!node) return;
+      if (node.nodeType === 3) { this._text(node); return; }
+      if (node.nodeType !== 1) return;
+      if (this.SKIP_TAGS[node.tagName]) return;
+      if (node.hasAttribute && node.hasAttribute('data-no-i18n')) return;
+
+      this._attrs(node);
+
+      var kids = node.childNodes;
+      for (var i = 0; i < kids.length; i++) this._walk(kids[i]);
+    },
+
+    _text(node) {
+      var cur = node.nodeValue;
+      if (!cur || !/\S/.test(cur)) return;
+      var parent = node.parentNode;
+      if (parent && parent.nodeType === 1) {
+        if (this.SKIP_TAGS[parent.tagName]) return;
+        if (parent.hasAttribute && parent.hasAttribute('data-no-i18n')) return;
+      }
+      /* Оригинал запоминаем при первой встрече. Если код позже положил
+         в тот же узел другой текст — считаем новым оригиналом, иначе
+         перевод затёр бы свежую строку старой. */
+      if (node.__i18nRu === undefined) node.__i18nRu = cur;
+      else if (cur !== node.__i18nRu && cur !== node.__i18nOut) node.__i18nRu = cur;
+      var src = node.__i18nRu;
+      var out = this.lang === 'ru' ? src : this.t(src);
+      node.__i18nOut = out;
+      if (out !== cur) node.nodeValue = out;
+    },
+
+    _attrs(el) {
+      for (var i = 0; i < this.ATTRS.length; i++) {
+        var a = this.ATTRS[i];
+        if (!el.hasAttribute(a)) continue;
+        var store = 'i18nRu' + a.replace(/(^|-)([a-z])/g, function (_, __, c) { return c.toUpperCase(); });
+        var cur = el.getAttribute(a);
+        var outStore = store + 'Out';
+        if (el.dataset[store] === undefined) el.dataset[store] = cur;
+        else if (cur !== el.dataset[store] && cur !== el.dataset[outStore]) el.dataset[store] = cur;
+        var src = el.dataset[store];
+        var out = this.lang === 'ru' ? src : this.t(src);
+        el.dataset[outStore] = out;
+        if (out !== cur) el.setAttribute(a, out);
+      }
+    },
+
+    /* Полный пересчёт — при смене языка */
+    retranslate() {
+      this.applyDom(document.body);
+    },
+
+    /* Наблюдатель: всё, что дорисовано динамически, переводится сразу.
+       Без него пришлось бы дёргать applyDom после каждого render*(). */
+    observe() {
+      if (this._observer || typeof MutationObserver === 'undefined') return;
+      var self = this;
+      this._observer = new MutationObserver(function (records) {
+        if (self.lang === 'ru' || self._busy) return;
+        self._busy = true;
+        try {
+          for (var i = 0; i < records.length; i++) {
+            var r = records[i];
+            if (r.type === 'characterData') { self._text(r.target); continue; }
+            for (var j = 0; j < r.addedNodes.length; j++) self._walk(r.addedNodes[j]);
+          }
+        } catch (e) {
+          console.warn('[I18N.observe]', e);
+        }
+        self._busy = false;
+      });
+      this._observer.observe(document.body, {
+        childList: true, subtree: true, characterData: true
+      });
+    }
+  };
+
+  /* Короткий псевдоним — им пользуются Domain/UI/Controllers */
+  function t(s) { return I18N.t(s); }
+
+  /* —— Словарь. Ключ — русская строка как есть в коде/разметке —— */
+  I18N.EN = {
+    /* Общее */
+    'Отмена': 'Cancel',
+    'Сохранить': 'Save',
+    'Удалить': 'Delete',
+    'Удалено': 'Deleted',
+    'Удалён': 'Deleted',
+    'Добавить': 'Add',
+    'Закрыть': 'Close',
+    'Готово': 'Done',
+    'Продолжить': 'Continue',
+    'Понятно': 'Got it',
+    'Применить': 'Apply',
+    'Сбросить': 'Reset',
+    'Убрать': 'Remove',
+    'Вернуть': 'Restore',
+    'Выйти': 'Sign out',
+    'Отправить': 'Send',
+    'Скопировать': 'Copy',
+    'Пропустить': 'Skip',
+    'Оставить все': 'Keep both',
+    'Текущий': 'Current',
+    'сейчас': 'now',
+    'или': 'or',
+    'до': 'before',
+    'Сохранено': 'Saved',
+    'Обновлено': 'Updated',
+    'Создано': 'Created',
+    'Проверка…': 'Checking…',
+    'Проверяю…': 'Checking…',
+    'Отправляю…': 'Sending…',
+    'Синхронизация…': 'Syncing…',
+    'Редактировать': 'Edit',
+    'своя': 'custom',
+
+    /* Навигация и шапка */
+    'Расписание': 'Schedule',
+    'Клиенты': 'Clients',
+    'Клуб': 'Club',
+    'Настройки': 'Settings',
+    'Танцевальный тренер': 'Dance Trainer',
+    '💃 Танцевальный тренер': '💃 Dance Trainer',
+    'Учёт клиентов и занятий': 'Clients and classes',
+    'Учёт клиентов и занятий танцевального тренера': 'Client and class tracking for dance teachers',
+    'Танцы': 'Dance',
+    'Клиенты ·': 'Clients ·',
+
+    /* Вход и регистрация */
+    'Создайте профиль, чтобы сохранять клиентов и расписание':
+      'Create a profile to keep your clients and schedule',
+    '☁ Синхронизация между устройствами': '☁ Sync across devices',
+    'Войдите через': 'Sign in with',
+    'Яндекс ID': 'Yandex ID',
+    '— клиенты и расписание автоматически сохраняются на Яндекс.Диск и доступны на телефоне и компьютере.':
+      '— your clients and schedule are saved to Yandex.Disk automatically and available on both phone and computer.',
+    'Локальная регистрация (телефон/пароль) работает': 'A local account (phone/password) works',
+    'только на этом устройстве': 'on this device only',
+    'Имя *': 'Name *',
+    'Имя': 'Name',
+    'Как входить *': 'Sign-in method *',
+    'Как входить': 'Sign-in method',
+    'Телефон': 'Phone',
+    'Телефон *': 'Phone *',
+    'Пароль': 'Password',
+    'Пароль *': 'Password *',
+    'Телефон и почта — разные аккаунты. Войти можно тем способом, которым регистрировались.':
+      'Phone and email are separate accounts. Sign in the same way you registered.',
+    'Зарегистрироваться': 'Create account',
+    'Войти через Яндекс ID': 'Sign in with Yandex ID',
+    'Уже есть аккаунт?': 'Already have an account?',
+    'Войти': 'Sign in',
+    'Нет аккаунта?': 'No account yet?',
+    'Регистрация': 'Register',
+    'Yandex ClientID (только если не зашит в код)': 'Yandex ClientID (only if not hard-coded)',
+    'Сохранить ClientID': 'Save ClientID',
+    'Вставьте ClientID': 'Paste the ClientID',
+    'ClientID не задан': 'ClientID is not set',
+    'ClientID сохранён — можно входить через Яндекс': 'ClientID saved — you can sign in with Yandex now',
+    'ClientID сохранён ✓': 'ClientID saved ✓',
+    'Укажите телефон или email': 'Enter a phone number or an email',
+    'Введите телефон или email': 'Enter a phone number or an email',
+    'Введите номер телефона или корректный email': 'Enter a phone number or a valid email',
+    'Российский номер — это 11 цифр вместе с кодом страны':
+      'A Russian number is 11 digits including the country code',
+    'Проверьте номер: не хватает цифр': 'Check the number — some digits are missing',
+    'Укажите имя': 'Enter a name',
+    'Пароль должен быть не короче 8 символов': 'The password must be at least 8 characters',
+    'Не удалось сохранить аккаунт: браузер блокирует хранилище':
+      'Could not save the account — the browser is blocking storage',
+    'Введите пароль': 'Enter your password',
+    'Неверный пароль': 'Wrong password',
+    'На этом устройстве ещё нет ни одного аккаунта — сначала зарегистрируйтесь':
+      'There are no accounts on this device yet — please register first',
+    'Аккаунт с таким логином не найден. Локальный вход работает только на том устройстве, где вы регистрировались. Для доступа с любого устройства входите через Яндекс ID.':
+      'No account was found with this login. A local sign-in only works on the device where you registered. To reach your data from any device, sign in with Yandex ID.',
+    'Этот аккаунт привязан к Яндекс ID — нажмите «Войти через Яндекс ID»':
+      'This account is linked to Yandex ID — tap “Sign in with Yandex ID”',
+    'Яндекс ID работает только по https:// (залейте на хостинг)':
+      'Yandex ID only works over https:// (deploy the page to a host)',
+    'Не удалось открыть окно входа': 'Could not open the sign-in window',
+    'Не удалось войти через Яндекс': 'Could not sign in with Yandex',
+    'Выйти из аккаунта?': 'Sign out?',
+    'Выйти из аккаунта': 'Sign out',
+    'Данные в облаке (Яндекс.Диск) сохранятся.': 'Your data in the cloud (Yandex.Disk) will be kept.',
+    'Вы вышли': 'You are signed out',
+    'Локальный аккаунт: данные только на этом устройстве':
+      'Local account — your data stays on this device only',
+
+    /* Расписание */
+    '📋 Копировать неделю': '📋 Copy week',
+    '📅 Выбрать дату': '📅 Pick a date',
+    'Сегодня': 'Today',
+    '🗑 Очистить день': '🗑 Clear day',
+    'Нет занятий — нажмите «+»': 'No classes — tap “+”',
+    'Нет занятий': 'No classes',
+    'В прошлой неделе нет занятий': 'There were no classes last week',
+    'Скопировать прошлую неделю?': 'Copy last week?',
+    'Очистить день?': 'Clear the day?',
+    'День очищен': 'Day cleared',
+    'Итог дня': 'Day total',
+    'Занятие': 'Class',
+    'Занятия': 'Classes',
+    'Новое занятие': 'New class',
+    'Название занятия': 'Class name',
+    'Дата *': 'Date *',
+    'Время *': 'Time *',
+    'Длительность': 'Duration',
+    'Комментарий': 'Comment',
+    'Клиенты (разовые)': 'Clients (drop-in)',
+    'Никто не выбран': 'Nobody selected',
+    'Списывать абонемент': 'Use class pass',
+    'Годится и для группы, и для индивидуального. Если включено — у участников с действующим абонементом списывается 1 занятие и ставится «Оплатил».':
+      'Works for both group and one-to-one classes. When on, attendees with an active pass have one class deducted and are marked as paid.',
+    'Стоимость занятия, ₽': 'Class price, ₽',
+    'Стоимость с человека, ₽': 'Price per person, ₽',
+    'Сумма за занятие целиком, сколько бы человек в нём ни было.':
+      'The price for the whole class, however many people attend.',
+    'Умножается на число заплативших. У кого списался абонемент — не в счёт: их оплата уже учтена при продаже абонемента.':
+      'Multiplied by the number of people who paid. Those covered by a pass are not counted — their payment was recorded when the pass was sold.',
+    'Удалить занятие': 'Delete class',
+    '🗑 Удалить занятие': '🗑 Delete class',
+    'Удалить занятие?': 'Delete this class?',
+    '✏️ Изменить': '✏️ Edit',
+    'Клиенты и оплата': 'Clients and payment',
+    'Без клиентов': 'No clients',
+    'Оплатил': 'Paid',
+    'Не оплатил': 'Not paid',
+    'Оплачено': 'Paid',
+    'Оплата снята': 'Payment cleared',
+    'Занятие не найдено — обновите экран': 'Class not found — refresh the screen',
+    'Время пересекается': 'Times overlap',
+    'Сохранить всё равно?': 'Save anyway?',
+    'Группа клуба': 'Club group',
+    '— не выбрана —': '— none —',
+    'Группа из раздела «Клуб» — в расписании синим, без оплаты за занятие':
+      'A group from the Club tab — shown in blue, with no per-class payment',
+    'Нажмите на занятие, которое оставить': 'Tap the class you want to keep',
+    'переносим': 'moving',
+    'на этом месте': 'already here',
+    'уже стоит': 'already there',
+
+    /* Клиенты и абонементы */
+    'Новый клиент': 'New client',
+    'Карточка клиента': 'Client card',
+    'Заметки': 'Notes',
+    'Нет клиентов': 'No clients',
+    'без телефона': 'no phone',
+    'Клиент обновлён': 'Client updated',
+    'Клиент добавлен': 'Client added',
+    'Удалить клиента?': 'Delete this client?',
+    'Занятия останутся в расписании, но участник из них пропадёт.':
+      'The classes stay in the schedule, but this person will be removed from them.',
+    'Похожий клиент уже есть': 'A similar client already exists',
+    'Всё равно сохранить как отдельного?': 'Save as a separate client anyway?',
+    'Такой клиент уже есть': 'This client already exists',
+    'Совпадает имя или телефон. Добавить ещё одного?':
+      'The name or phone matches an existing client. Add another one?',
+    'Введите номер полностью: 11 цифр': 'Enter the full number — 11 digits',
+    'Сначала добавьте клиентов': 'Add some clients first',
+    'Абонемент': 'Class pass',
+    'Абонементы': 'Class passes',
+    'Действует с': 'Valid from',
+    'этой даты абонементом не оплачиваются.': 'this date are not covered by the pass.',
+    'Стоимость абонемента, ₽': 'Pass price, ₽',
+    'Нужна только при выдаче абонемента. Запишется в доход сегодняшним днём.':
+      'Only needed when issuing a pass. It is recorded as income for today.',
+    'Списывается автоматически на занятиях с включённой опцией «Списывать абонемент»':
+      'Deducted automatically in classes that have “Use class pass” turned on',
+    'Абонемента нет. Выберите пакет ниже.': 'No pass yet. Pick a package below.',
+    'осталось занятий': 'classes left',
+    'абонемент исчерпан': 'pass used up',
+    'Сбросить абонемент?': 'Reset the pass?',
+    'Снимутся оплаты, проставленные этим абонементом, и продажа уйдёт из отчёта. Оплаты наличными останутся.':
+      'Payments marked by this pass will be cleared and the sale will disappear from the report. Cash payments stay.',
+    'Абонемент сброшен': 'Pass reset',
+    'Сначала сохраните клиента': 'Save the client first',
+    'Укажите стоимость абонемента': 'Enter the pass price',
+    'на занятии выключено «Списывать абонемент»': 'this class has “Use class pass” turned off',
+    'оплата отмечена вручную — абонемент не тронут': 'marked as paid by hand — the pass was untouched',
+    'занятия на абонементе закончились': 'no classes left on the pass',
+
+    /* Деньги */
+    'Поступления': 'Income',
+    'Сгруппировать': 'Group',
+    'По датам': 'By date',
+    '➕ Добавить доход': '➕ Add income',
+    'Дополнительный доход': 'Additional income',
+    'Сумма, ₽ *': 'Amount, ₽ *',
+    'За что': 'What for',
+    'Доход': 'Income',
+    'Доход записан': 'Income recorded',
+    'Укажите дату и сумму': 'Enter a date and an amount',
+    'Удалить запись о доходе?': 'Delete this income entry?',
+    'Введите сумму': 'Enter an amount',
+    'За месяц': 'This month',
+    'занятий': 'classes',
+    'учеников': 'students',
+    'оплат': 'payments',
+    'нет оплат': 'no payments',
+    'не продавались': 'none sold',
+    'разовые поступления': 'one-off income',
+    'ничего не добавлено': 'nothing added',
+    'Прочее': 'Other',
+    'Убрать продажу из отчёта?': 'Remove this sale from the report?',
+    'Сам абонемент клиента при этом не меняется.': 'The client’s own pass is not affected.',
+    'Продажа убрана из отчёта': 'Sale removed from the report',
+    'Дальше вперёд некуда': 'That is as far forward as it goes',
+    'Учёт хранится за 2 года': 'Records are kept for 2 years',
+    'Архив хранится за 2 года': 'The archive is kept for 2 years',
+
+    /* Клуб */
+    'Члены клуба': 'Club members',
+    'Член клуба': 'Club member',
+    'Новый член клуба': 'New club member',
+    'Член клуба добавлен': 'Club member added',
+    'Удалить члена клуба?': 'Delete this club member?',
+    'Нет членов клуба — нажмите «+»': 'No club members — tap “+”',
+    'Сформировать группу': 'Create a group',
+    'Новая группа': 'New group',
+    'Редактировать группу': 'Edit group',
+    'Название группы *': 'Group name *',
+    'Членский взнос (₽) *': 'Membership fee (₽) *',
+    'Участники': 'Members',
+    'Нет участников': 'No members',
+    'Группа': 'Group',
+    'Групп': 'Groups',
+    'Членов клуба': 'Club members',
+    'Оплатили взносы': 'Fees paid',
+    'Собрано за месяц': 'Collected this month',
+    'Пока нет групп — нажмите «Сформировать группу»': 'No groups yet — tap “Create a group”',
+    'Удалить группу': 'Delete group',
+    'Удалить группу?': 'Delete this group?',
+    'Участники останутся, но перестанут числиться в этой группе.':
+      'The members stay, but will no longer belong to this group.',
+    'Группа обновлена': 'Group updated',
+    'Группа создана': 'Group created',
+    'Группа удалена': 'Group deleted',
+    'Укажите название': 'Enter a name',
+    'Сначала добавьте членов клуба': 'Add some club members first',
+    'Скидка': 'Discount',
+    'Без скидки': 'No discount',
+    'Своя сумма (₽)': 'Custom amount (₽)',
+    'Скидка снята': 'Discount removed',
+    'Скидки меняются только в текущем месяце': 'Discounts can only be changed in the current month',
+    'Взнос отмечен': 'Fee marked as paid',
+    'Отметка снята': 'Mark removed',
+    '🗄 Архив — данные за прошлый месяц': '🗄 Archive — data from a past month',
+    '🗄 Архив: состав и взнос зафиксированы на этот месяц. Отметки оплат можно править.':
+      '🗄 Archive: the roster and the fee are locked for this month. Payment marks can still be edited.',
+    '(удалён)': '(deleted)',
+
+    /* Настройки */
+    'Профиль': 'Profile',
+    'Гость': 'Guest',
+    'Редактировать профиль': 'Edit profile',
+    'Сохранить профиль': 'Save profile',
+    'Профиль сохранён': 'Profile saved',
+    'Профиль очищен': 'Profile cleared',
+    'Настройки сохранены': 'Settings saved',
+    'Данные на устройстве. Яндекс ID / SMS требуют сервер — здесь локальный профиль.':
+      'Stored on this device. Yandex ID / SMS need a server — this is a local profile.',
+    'Название календаря': 'Calendar name',
+    'Язык': 'Language',
+    'Тема': 'Theme',
+    'Светлая': 'Light',
+    'Тёмная': 'Dark',
+    'Чёрная': 'Black',
+    'Цвет приложения': 'App colour',
+    'Свой цвет': 'Custom colour',
+    'Стиль календаря': 'Calendar style',
+    'Стандартный': 'Standard',
+    'Решётка времени с деталями': 'Time grid with details',
+    'Карточки': 'Cards',
+    'Список занятий крупными карточками': 'Classes as large cards',
+    'Обучение': 'Tutorial',
+    'Пройти обучение заново': 'Replay the tutorial',
+    'Короткий тур по разделам приложения — 6 экранов.':
+      'A short tour of the app — six screens.',
+
+    /* Контакты */
+    'Контакты телефона': 'Phone contacts',
+    'Контакты устройства': 'Device contacts',
+    '📱 Импорт контактов': '📱 Import contacts',
+    'Выбрать все': 'Select all',
+    'Добавить выбранных': 'Add selected',
+    'Контактов нет': 'No contacts',
+    'По запросу ничего не найдено': 'Nothing matches your search',
+    'Нет контактов для добавления': 'No contacts to add',
+    'Контакт подставлен в форму': 'Contact filled into the form',
+    'Все уже есть': 'They are all here already',
+    'Не удалось прочитать файл': 'Could not read the file',
+    'Без имени': 'No name',
+    'уже добавлен': 'already added',
+    'Как добавить контакты?': 'How would you like to add contacts?',
+    'Выбрать файл': 'Choose a file',
+    'Вставить текстом': 'Paste as text',
+    'Вставьте список': 'Paste a list',
+    'Каждое имя с новой строки. Можно «Имя, телефон».':
+      'One name per line. “Name, phone” works too.',
+    'Разрешите доступ к контактам': 'Please allow access to contacts',
+    'Доступ к контактам запрещён. Разрешите его в настройках приложения.':
+      'Access to contacts is denied. Allow it in the app settings.',
+    'Доступ к контактам запрещён. Разрешите в настройках браузера или импортируйте файл.':
+      'Access to contacts is denied. Allow it in your browser settings, or import a file.',
+    'Доступ к контактам запрещён. Разрешите в настройках Safari/Chrome → Контакты или импортируйте файл.':
+      'Access to contacts is denied. Allow it in Safari/Chrome settings → Contacts, or import a file.',
+    'В телефонной книге нет контактов с номерами': 'Your phone book has no contacts with numbers',
+    'Не удалось открыть контакты': 'Could not open contacts',
+    'Контакты телефона доступны — откроется список с поиском и галочками.':
+      'Phone contacts are available — a searchable list with checkboxes will open.',
+    'Системный выбор контактов доступен.': 'The system contact picker is available.',
+    'Можно выбрать контакты из телефонной книги (браузер спросит разрешение).':
+      'You can pick contacts from your phone book (the browser will ask for permission).',
+    'Системный выбор недоступен на этом устройстве. Используйте импорт vCard/CSV или вставку списка имён.':
+      'The system picker is not available on this device. Import a vCard/CSV file, or paste a list of names.',
+    'На Android Chrome — системный выбор контактов. На iPhone и других — импорт из файла vCard/CSV или вставка списка имён.':
+      'On Android Chrome the system contact picker opens. On iPhone and elsewhere — import a vCard/CSV file, or paste a list of names.',
+    'Сейчас открыт сайт в браузере, а не приложение.':
+      'You are viewing the website in a browser, not the app.',
+    'Телефонную книгу браузер не отдаёт — список контактов доступен только в установленном приложении.':
+      'A browser will not hand over the phone book — the contact list is only available in the installed app.',
+    'Прямой доступ к телефонной книге на этом устройстве недоступен.':
+      'Direct access to the phone book is not available on this device.',
+    'Можно выбрать файл vCard/CSV из «Контактов» или вставить список имён текстом.':
+      'You can pick a vCard/CSV file from Contacts, or paste a list of names as text.',
+    'Код страны': 'Country code',
+    'Ничего не нашлось': 'Nothing found',
+    'номер телефона': 'phone number',
+
+    /* Данные и синхронизация */
+    'Данные': 'Data',
+    '☁ Облачная синхронизация': '☁ Cloud sync',
+    'Обновить из облака': 'Refresh from cloud',
+    'Отправить в облако': 'Send to cloud',
+    'Отправить данные в облако?': 'Send your data to the cloud?',
+    'Проверить синхронизацию': 'Check sync',
+    '📤 Экспорт данных': '📤 Export data',
+    '📥 Импорт данных': '📥 Import data',
+    '↩️ Отменить последнее удаление': '↩️ Undo last deletion',
+    'Вернёт расписание к состоянию до очистки дня.':
+      'Restores the schedule to how it was before the day was cleared.',
+    'При входе через Яндекс ID данные пишутся в папку приложения на Яндекс.Диске. Локальный аккаунт (пароль) — только на этом устройстве; для синхронизации используйте Яндекс ID.':
+      'When you sign in with Yandex ID, your data is written to the app folder on Yandex.Disk. A local account (password) stays on this device only — use Yandex ID to sync.',
+    'Экспорт готов': 'Export ready',
+    'Импорт выполнен': 'Import complete',
+    'Ошибка файла': 'File error',
+    'Синхронизация с Яндекс.Диском…': 'Syncing with Yandex.Disk…',
+    'Диск не ответил — данные не тронуты. Если данные тут есть, нажмите «Отправить в облако»':
+      'Disk did not answer — nothing was touched. If your data is here, tap “Send to cloud”',
+    'В облаке было пусто — загрузили данные с устройства':
+      'The cloud was empty — data from this device was uploaded',
+    'Загружено из облака': 'Loaded from the cloud',
+    'Сохранено в облако': 'Saved to the cloud',
+    'Не удалось синхронизировать': 'Could not sync',
+    'Не удалось синхронизировать с облаком': 'Could not sync with the cloud',
+    'Данные загружены с Яндекс.Диска': 'Data loaded from Yandex.Disk',
+    'Локальные данные сохранены в облако': 'Local data was saved to the cloud',
+    'Только локально': 'Local only',
+    'Только локально — войдите через Яндекс ID для синхронизации':
+      'Local only — sign in with Yandex ID to sync',
+    '☁ Активна (Яндекс.Диск)': '☁ Active (Yandex.Disk)',
+    'Нужно войти через Яндекс снова (токен истёк)': 'Sign in with Yandex again (the token expired)',
+    'Синхронизация доступна только после входа через Яндекс ID':
+      'Sync is available only after signing in with Yandex ID',
+    'На этом устройстве нет данных — отправлять нечего':
+      'There is no data on this device — nothing to send',
+    'Отправлять нечего': 'Nothing to send',
+    'Не удалось отправить — проверьте связь': 'Could not send — check your connection',
+    'Сессия Яндекс истекла — войдите снова': 'Your Yandex session has expired — sign in again',
+    'Сессия Яндекс истекла — войдите снова для синхронизации':
+      'Your Yandex session has expired — sign in again to sync',
+    'То, что лежит в облаке, будет заменено.': 'Whatever is in the cloud will be replaced.',
+    'Возвращать нечего': 'Nothing to restore',
+    'Снимок сохраняется только перед уборкой дублей и очисткой дня, и только начиная со сборки 39.':
+      'A snapshot is only taken before a duplicate cleanup or clearing a day, and only from build 39 onwards.',
+    'Вернуть данные до уборки?': 'Restore the data from before the cleanup?',
+    'Всё, что изменилось после, будет потеряно.': 'Everything changed since then will be lost.',
+    'Данные возвращены': 'Data restored',
+
+    /* Диагностика */
+    'ПРИЛОЖЕНИЕ (APK)': 'APP (APK)',
+    'САЙТ в браузере': 'WEBSITE in a browser',
+    'есть (список внутри приложения)': 'yes (list inside the app)',
+    'старый, только по одному контакту': 'old, one contact at a time',
+    'НЕТ': 'NO',
+    'окно внутри приложения': 'window inside the app',
+    'через браузер': 'via the browser',
+    'да': 'yes',
+    'нет': 'no',
+    'сайт GitHub Pages (обновляется сам)': 'GitHub Pages site (updates itself)',
+    'встроенная копия в APK (нет связи с сайтом)': 'copy bundled in the APK (no link to the site)',
+    'выполнена': 'done',
+    'ещё нет': 'not yet',
+    'работает': 'working',
+    'НЕДОСТУПНО — данные не сохранятся!': 'UNAVAILABLE — data will not be saved!',
+    'локальный (пароль)': 'local (password)',
+    'есть': 'yes',
+    'НЕТ — войдите через Яндекс ID': 'NO — sign in with Yandex ID',
+    'Доступ к Диску: ОК': 'Disk access: OK',
+    'Доступ к Диску: ЗАПРЕЩЁН (403).': 'Disk access: DENIED (403).',
+    'Причина: у приложения на oauth.yandex.ru не включено право':
+      'Reason: the app on oauth.yandex.ru does not have the permission',
+    '«Доступ к папке приложения на Диске» (cloud_api:disk.app_folder),':
+      '“Access to the app folder on Disk” (cloud_api:disk.app_folder),',
+    'либо токен выдан до его включения — выйдите и войдите заново.':
+      'or the token was issued before it was enabled — sign out and back in.',
+    'Доступ к Диску: токен недействителен (401) — войдите заново.':
+      'Disk access: the token is invalid (401) — sign in again.',
+    'Файл данных в облаке: пока нет (будет создан при первом сохранении)':
+      'Data file in the cloud: none yet (it will be created on the first save)',
+    'Чтение файла: файла нет': 'Reading the file: no file',
+    'Чтение файла: НЕ УДАЛОСЬ': 'Reading the file: FAILED',
+    'причина неизвестна': 'reason unknown',
+
+    /* Ошибки */
+    'Неверный формат': 'Invalid format',
+    'операция прервана': 'the operation was interrupted',
+    'неизвестно': 'unknown',
+
+    /* Плейсхолдеры */
+    'Ваше имя': 'Your name',
+    'Минимум 8 символов': 'At least 8 characters',
+    'Имя или номер': 'Name or number',
+    'Поиск по имени или номеру...': 'Search by name or number...',
+    'Поиск: страна или код': 'Search: country or code',
+    'Например: субаренда зала': 'e.g. studio sublet',
+    'Например: Сальса группа А': 'e.g. Salsa group A',
+    'Например: Сальса… (необязательно)': 'e.g. Salsa… (optional)',
+    'Например 700': 'e.g. 700',
+    'Анна Иванова': 'Jane Smith',
+    'Иван Иванов': 'John Smith',
+    'Уровень, особенности...': 'Level, notes...',
+    'Зал, тема…': 'Studio, topic…',
+    'Зал, расписание...': 'Studio, schedule...',
+    'Латина · вечер': 'Latin · evening',
+    'Анна Иванова, +7 999 123-45-67\nПётр Смирнов': 'Jane Smith, +7 999 123-45-67\nPeter Brown',
+    'Предыдущий месяц': 'Previous month',
+    'Следующий месяц': 'Next month',
+
+    /* Дни недели в календаре */
+    'пн': 'Mon', 'вт': 'Tue', 'ср': 'Wed', 'чт': 'Thu', 'пт': 'Fri', 'сб': 'Sat', 'вс': 'Sun',
+
+    /* Обучение */
+    '☁ Активна': '☁ Active',
+    '☁ Синхронизировано': '☁ Synced',
+    'Вход через Яндекс выполнен': 'Signed in with Yandex',
+    'Токен не получен': 'No token received',
+    'Данные не сохраняются (предпросмотр)': 'Data is not being saved (preview)',
+    'Не удалось добавить контакт': 'Could not add the contact',
+    'Без доступа к контактам импорт из телефона недоступен':
+      'Without access to contacts, importing from the phone is not possible',
+    'Офлайн-режим': 'Offline mode',
+    'Сеть появилась': 'Back online',
+    'Нужен ClientID приложения на': 'You need the app ClientID from',
+    '🎓 Пройти обучение заново': '🎓 Replay the tutorial',
+    'пополам': 'split',
+    'группа': 'group',
+    'Далее': 'Next',
+    'Начать работу': 'Get started',
+    'Пропустить обучение': 'Skip tutorial',
+    'Добро пожаловать!': 'Welcome!',
+    'Неделя перед глазами': 'Your week at a glance',
+    'Клиенты и абонементы': 'Clients and passes',
+    'Клуб и взносы': 'The club and its fees',
+    'Деньги сами считаются': 'The money adds up by itself',
+    'Данные не потеряются': 'Your data stays safe'
+  };
+
+  /* —— Строки, собранные из кусков —— */
+  I18N.RULES = [
+    [/^Аккаунт (.+) уже зарегистрирован — войдите в него$/,
+      'Account $1 is already registered — sign in instead'],
+    [/^Аккаунт создан: (.+)$/, 'Account created: $1'],
+    [/^С возвращением, (.*)!$/, 'Welcome back, $1!'],
+    [/^Абонемент (\d+) зан\. — (.+)$/, 'Pass · $1 classes — $2'],
+    [/^абонемент действует с (.+)$/, 'the pass is valid from $1'],
+    [/^Абонемент действует с (.+)$/, 'Pass valid from $1'],
+    [/^с (\d.+)$/, 'from $1'],
+    [/^Абонемент обновлён$/, 'Pass updated'],
+    [/^Абонемент обновлён: осталось (\d+)$/, 'Pass updated · $1 left'],
+    [/^Абонемент сброшен(?:,| ·) снято оплат: (\d+)$/, 'Pass reset · $1 payments cleared'],
+    [/^Выбрано: (\d+) из (\d+)$/, 'Selected: $1 of $2'],
+    [/^Найдено: (\d+)$/, 'Found: $1'],
+    [/^Добавить (\d+)$/, 'Add $1'],
+    [/^Добавлено: (\d+)$/, 'Added: $1'],
+    [/^Добавлено: (\d+), пропущено: (\d+)$/, 'Added: $1, skipped: $2'],
+    [/^Накладка (\d+) из (\d+)$/, 'Overlap $1 of $2'],
+    [/^пересечение (\d+) мин$/, '$1 min overlap'],
+    [/^(\d+) мин$/, '$1 min'],
+    [/^и ещё (\d+)$/, 'and $1 more'],
+    [/^(\d+) чел\.$/, '$1 people'],
+    [/^\((\d+) чел\.\)$/, '($1 people)'],
+    [/^(.+) \((\d+) чел\.\)$/, function (m) {
+      return I18N.t(m[1]) + ' (' + m[2] + ' ' + (m[2] === '1' ? 'person' : 'people') + ')';
+    }],
+    [/^Заработано за (.+)$/, 'Earned in $1'],
+    [/^За (.+) здесь пусто$/, 'Nothing here for $1'],
+    [/^(\d+) оплат$/, '$1 payments'],
+    [/^(\d+) шт\.$/, '$1 sold'],
+    [/^сборка (.+)$/, 'build $1'],
+    [/^Скидка (\d+) ₽$/, 'Discount $1 ₽'],
+    [/^(.+) \(сейчас −(\d+) ₽\)$/, '$1 (currently −$2 ₽)'],
+    [/^к оплате (.+)$/, 'due $1'],
+    [/^взнос (.+)$/, 'fee $1'],
+    [/^(\d+)( ?\/ ?)(\d+) оплатили$/, '$1$2$3 paid'],
+    [/^Взнос: $/, 'Fee: '],
+    [/^Взнос:$/, 'Fee:'],
+    [/^(.+ ₽) из (.+ ₽)$/, '$1 of $2'],
+    [/^занятия (.+)$/, 'classes $1'],
+    [/^абонементы (.+)$/, 'passes $1'],
+    [/^прочее (.+)$/, 'other $1'],
+    [/^Сбой: (.+)$/, 'Error: $1'],
+    [/^Ошибка проверки: (.+)$/, 'Check failed: $1'],
+    [/^Отправлено в облако: (\d+) записей$/, 'Sent to the cloud: $1 entries'],
+    [/^Перенесётся (\d+) (?:занятие|занятия|занятий) — всё как было\. Оплаты не переносятся\.$/,
+      function (m) {
+        return 'It will move ' + m[1] + ' ' + (m[1] === '1' ? 'class' : 'classes') +
+          ' exactly as they were. Payments are not carried over.';
+      }],
+    [/^Скопировано: (\d+)(?:, уже было: (\d+))?(?:, накладок: (\d+))?$/, function (m) {
+      var out = 'Copied: ' + m[1];
+      if (m[2]) out += ', already there: ' + m[2];
+      if (m[3]) out += ', overlaps: ' + m[3];
+      return out;
+    }],
+    [/^(.+) — удалится (\d+) (?:занятие|занятия|занятий)\. Отменить не получится\.$/, function (m) {
+      return m[1] + ' — ' + m[2] + ' ' + (m[2] === '1' ? 'class' : 'classes') +
+        ' will be deleted. This cannot be undone.';
+    }],
+    [/^Здесь сейчас (\d+) записей: клиентов (\d+), занятий (\d+)\.$/,
+      'There are $1 entries here: $2 clients, $3 classes.'],
+    [/^Снимок сделан перед действием «(.+)»\.$/, function (m) {
+      return 'The snapshot was taken before “' + I18N.t(m[1]) + '”.';
+    }],
+    [/^очистка дня (.+)$/, 'clearing the day $1'],
+    [/^Тогда было занятий: (\d+), клиентов: (\d+)\.$/, 'Back then: $1 classes, $2 clients.'],
+    [/^(.+) накладывается на:$/, '$1 overlaps with:'],
+    [/^• (.+)$/, '• $1'],
+    /* Диагностика */
+    [/^Сборка: (.+)$/, 'Build: $1'],
+    [/^Где открыто: (.+)$/, 'Opened in: $1'],
+    [/^Мост контактов: (.+)$/, 'Contacts bridge: $1'],
+    [/^Вход через Яндекс: (.+)$/, 'Yandex sign-in: $1'],
+    [/^Отступы из Android: (.+)$/, 'Insets from Android: $1'],
+    [/^Источник страницы: (.+)$/, 'Page source: $1'],
+    [/^Аккаунтов на устройстве: (\d+)$/, 'Accounts on this device: $1'],
+    [/^Записей на устройстве: (\d+) \(клиентов (\d+), занятий (\d+), членов клуба (\d+)\)$/,
+      'Entries on this device: $1 ($2 clients, $3 classes, $4 club members)'],
+    [/^Первая синхронизация: (.+)$/, 'First sync: $1'],
+    [/^Итог синхронизации: (.+)$/, 'Sync result: $1'],
+    [/^Чтение с Диска не прошло: (.+)$/, 'Reading from Disk failed: $1'],
+    [/^Файл прочитан способом: (.+)$/, 'File read via: $1'],
+    [/^Аккаунт: (.+)$/, 'Account: $1'],
+    [/^Хранилище: (.+)$/, 'Storage: $1'],
+    [/^Адрес страницы: (.+)$/, 'Page address: $1'],
+    [/^Тип входа: (.+)$/, 'Sign-in type: $1'],
+    [/^Токен Яндекса: (.+)$/, 'Yandex token: $1'],
+    [/^Файл данных в облаке: есть, изменён (.+)$/, 'Data file in the cloud: present, modified $1'],
+    [/^Файл данных в облаке: ошибка (.+)$/, 'Data file in the cloud: error $1'],
+    [/^Размер: (\d+) байт$/, 'Size: $1 bytes'],
+    [/^Чтение файла: УСПЕШНО(.*), записей (\d+)$/, 'Reading the file: OK$1, $2 entries'],
+    [/^ \(способ: (.+)\)$/, ' (via: $1)'],
+    [/^Доступ к Диску: сеть недоступна \((.+)\)$/, 'Disk access: network unavailable ($1)'],
+    [/^Доступ к Диску: неожиданный ответ (.+)$/, 'Disk access: unexpected response $1'],
+    /* Множественные формы, собранные через plural() уже на русском */
+    [/^(\d+) (ученик|ученика|учеников)$/, function (m) {
+      return m[1] + (m[1] === '1' ? ' student' : ' students');
+    }],
+    [/^(\d+) (оплата|оплаты|оплат)$/, function (m) {
+      return m[1] + (m[1] === '1' ? ' payment' : ' payments');
+    }],
+    [/^(\d+) (абонемент|абонемента|абонементов)$/, function (m) {
+      return m[1] + (m[1] === '1' ? ' pass' : ' passes');
+    }],
+    [/^(\d+) (запись|записи|записей)$/, function (m) {
+      return m[1] + (m[1] === '1' ? ' entry' : ' entries');
+    }],
+    [/^(\d+) (занятие|занятия|занятий)$/, function (m) {
+      return m[1] + (m[1] === '1' ? ' class' : ' classes');
+    }],
+    [/^нажмите, чтобы убрать запись$/, 'tap to remove an entry']
+  ];
 
   /* =========================================================
    * 2. STORAGE
@@ -2250,11 +3275,12 @@
       }
       return out;
     },
-    MONTHS_NOM: ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-                 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'],
-    /** Подпись месяца: «Август 2026» */
+    /* Названия месяцев живут в I18N — здесь только доступ к ним,
+       чтобы календарь и заголовки говорили на языке интерфейса. */
+    get MONTHS_NOM() { return I18N.monthsNom(); },
+    /** Подпись месяца: «Август 2026» / «August 2026» */
     monthTitle(year, month) {
-      return Domain.MONTHS_NOM[month] + ' ' + year;
+      return I18N.monthsNom()[month] + ' ' + year;
     },
     /** Сколько минут два занятия занимают одно и то же время */
     overlapMinutes(startA, durA, startB, durB) {
@@ -2280,13 +3306,17 @@
     },
     formatDisplayDate(dateStr) {
       const d = new Date(dateStr + 'T12:00:00');
-      const days = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
-      const months = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+      const days = I18N.daysSun();
+      const months = I18N.monthsShort();
+      if (I18N.lang === 'en') {
+        // По-английски естественнее «14 Aug (Thu)» читать как «Thu, 14 Aug»
+        return days[d.getDay()] + ', ' + d.getDate() + ' ' + months[d.getMonth()];
+      }
       return d.getDate() + ' ' + months[d.getMonth()] + ' (' + days[d.getDay()] + ')';
     },
     formatWeekRange(monday) {
       const end = this.addDays(monday, 6);
-      const months = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+      const months = I18N.monthsGen();
       if (monday.getMonth() === end.getMonth())
         return monday.getDate() + '–' + end.getDate() + ' ' + months[monday.getMonth()] + ' ' + monday.getFullYear();
       return monday.getDate() + ' ' + months[monday.getMonth()] + ' – ' + end.getDate() + ' ' + months[end.getMonth()];
@@ -2720,11 +3750,16 @@
       return Domain.monthKey(d);
     },
     monthLabel(key) {
-      var months = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-                    'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+      var months = I18N.monthsNom();
       var d = Domain.monthKeyToDate(key);
       if (isNaN(d.getTime())) return String(key || '');
       return months[d.getMonth()] + ' ' + d.getFullYear();
+    },
+    /* Месяц внутри фразы. По-русски — строчными («за август 2026»),
+       по-английски название месяца остаётся с заглавной. */
+    monthLabelSoft(key) {
+      var label = Domain.monthLabel(key);
+      return I18N.lang === 'en' ? label : label.toLowerCase();
     },
     escapeHtml(str) {
       if (!str) return '';
@@ -3322,7 +4357,7 @@
           } else if (file.ok) {
             var meta = await file.json();
             lines.push('Файл данных в облаке: есть, изменён ' +
-              new Date(meta.modified).toLocaleString('ru-RU'));
+              new Date(meta.modified).toLocaleString(I18N.locale()));
             lines.push('Размер: ' + (meta.size || 0) + ' байт');
             // Реальная попытка прочитать файл — самое важное место
             var test = await this.pullEx();
@@ -3714,7 +4749,7 @@
         Cloud.push().then(function (ok) {
           if (ok) {
             var el = document.getElementById('syncStatus');
-            if (el) el.textContent = '☁ Синхронизировано ' + new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+            if (el) el.textContent = t('☁ Синхронизировано') + ' ' + new Date().toLocaleTimeString(I18N.locale(), { hour: '2-digit', minute: '2-digit' });
           }
         });
       }, 1500);
@@ -4877,7 +5912,7 @@
           discount: rec.discounts[id] || 0,
           exists: !!m
         };
-      }).sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); });
+      }).sort(function (a, b) { return a.name.localeCompare(b.name, I18N.collate()); });
     },
     clubGroupStatsForMonth(group, key) {
       var rec = Services.ensureClubMonth(group, key);
@@ -5013,10 +6048,10 @@
       if (UI._askResolve) UI._closeAsk(o.input ? null : false);
 
       this.$('askIcon').textContent = o.icon || (o.danger ? '⚠️' : '❓');
-      this.$('askTitle').textContent = o.title || '';
+      this.$('askTitle').textContent = I18N.tBlock(o.title || '');
       var textEl = this.$('askText');
       textEl.innerHTML = '';
-      if (o.text) textEl.textContent = o.text;
+      if (o.text) textEl.textContent = I18N.tBlock(o.text);
       if (o.list && o.list.length) {
         textEl.insertAdjacentHTML('beforeend',
           (o.text ? '<div style="height:12px"></div>' : '') +
@@ -5033,7 +6068,7 @@
       inputRow.classList.toggle('hidden', !o.input);
       if (o.input) {
         input.value = '';
-        input.placeholder = o.placeholder || '';
+        input.placeholder = I18N.tBlock(o.placeholder || '');
       }
 
       var ok = this.$('askOk');
@@ -5045,22 +6080,22 @@
            и у каждого своё название. Тогда вместо двух кнопок рисуем список. */
         extra.classList.remove('hidden');
         ok.classList.add('hidden');
-        cancel.textContent = o.cancelText || 'Отмена';
+        cancel.textContent = I18N.t(o.cancelText || 'Отмена');
         o.choices.forEach(function (ch) {
           var b = document.createElement('button');
           b.type = 'button';
           b.className = 'btn btn-block ' + (ch.danger ? 'btn-danger' : 'btn-secondary');
           b.style.marginBottom = '8px';
-          b.textContent = ch.label;
+          b.textContent = I18N.t(ch.label);
           b.addEventListener('click', function () { UI._closeAsk(ch.value); });
           extra.appendChild(b);
         });
       } else {
         extra.classList.add('hidden');
         ok.classList.remove('hidden');
-        ok.textContent = o.okText || (o.input ? 'Добавить' : 'Продолжить');
+        ok.textContent = I18N.t(o.okText || (o.input ? 'Добавить' : 'Продолжить'));
       }
-      cancel.textContent = o.cancelText || 'Отмена';
+      cancel.textContent = I18N.t(o.cancelText || 'Отмена');
       cancel.classList.toggle('hidden', o.alert === true);
       if (o.danger) modal.classList.add('danger');
 
@@ -5088,7 +6123,7 @@
     showToast(msg) {
       var t = this.$('toast');
       if (!t) return;
-      t.textContent = msg;
+      t.textContent = I18N.t(msg);
       t.classList.add('show');
       setTimeout(function () { t.classList.remove('show'); }, 2500);
     },
@@ -5646,7 +6681,7 @@
     },
     renderClients() {
       var search = (this.$('clientSearch').value || '').toLowerCase().trim();
-      var clients = State.clients.slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); });
+      var clients = State.clients.slice().sort(function (a, b) { return a.name.localeCompare(b.name, I18N.collate()); });
       if (search) {
         clients = clients.filter(function (c) {
           return c.name.toLowerCase().includes(search) ||
@@ -5661,7 +6696,7 @@
       this.$('statWeek').textContent = stats.people;
       this.$('statClasses').textContent = stats.payments;
       var cap = this.$('statsCaption');
-      if (cap) cap.textContent = 'За ' + Domain.monthLabel(this.moneyMonth()).toLowerCase();
+      if (cap) cap.textContent = 'За ' + Domain.monthLabelSoft(this.moneyMonth());
       var list = this.$('clientsList');
       if (!clients.length) {
         list.innerHTML = '<div class="empty"><div class="empty-icon">👥</div><div>Нет клиентов</div></div>';
@@ -5772,7 +6807,7 @@
       var sel = this.$('classClubGroup');
       if (!sel) return;
       var html = '<option value="">— не выбрана —</option>';
-      var groups = State.clubGroups.slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); });
+      var groups = State.clubGroups.slice().sort(function (a, b) { return a.name.localeCompare(b.name, I18N.collate()); });
       groups.forEach(function (g) {
         html += '<option value="' + g.id + '"' + (selectedId === g.id ? ' selected' : '') + '>' +
           Domain.escapeHtml(g.name) + ' (' + ((g.memberIds && g.memberIds.length) || 0) + ' чел.)</option>';
@@ -5793,7 +6828,7 @@
         box.innerHTML = '<div class="text-sm text-muted" style="padding:12px">Сначала добавьте клиентов</div>';
         return;
       }
-      var sorted = State.clients.slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); });
+      var sorted = State.clients.slice().sort(function (a, b) { return a.name.localeCompare(b.name, I18N.collate()); });
       box.dataset.rendered = '1';
       box.innerHTML = sorted.map(function (c) {
         var ab = UI.tpl.abonementBadge(c.abonement);
@@ -5871,7 +6906,7 @@
         card.innerHTML =
           '<div class="money-hero">' +
             '<div class="money-total-label">Заработано за ' +
-              Domain.monthLabel(key).toLowerCase() + '</div>' +
+              Domain.monthLabelSoft(key) + '</div>' +
             '<div class="money-total">' + UI.formatMoney(m.total) + '</div>' +
           '</div>' +
           '<div class="money-rows">' +
@@ -5926,7 +6961,7 @@
     renderMoneyDetail() {
       var kind = this.moneyDetailKind;
       var key = this.moneyMonth();
-      var monthName = Domain.monthLabel(key).toLowerCase();
+      var monthName = Domain.monthLabelSoft(key);
       var titles = { lessons: 'Занятия', abonements: 'Абонементы', extra: 'Прочее' };
       var titleEl = this.$('moneyDetailTitle');
       if (titleEl) titleEl.textContent = titles[kind] || 'Поступления';
@@ -6013,12 +7048,9 @@
       if (groupBtn) groupBtn.textContent = this.moneyGrouped ? 'По датам' : 'Сгруппировать';
     },
     /** Склонение: 1 оплата, 2 оплаты, 5 оплат */
+    /* Формы числа берём из I18N: у английского их две, у русского три. */
     plural(n, one, few, many) {
-      var a = Math.abs(n) % 100, b = a % 10;
-      if (a > 10 && a < 20) return many;
-      if (b > 1 && b < 5) return few;
-      if (b === 1) return one;
-      return many;
+      return I18N.plural(n, one, few, many);
     },
     renderClassDetail(cls) {
       var clients = (cls.clientIds || []).map(function (cid) {
@@ -6052,7 +7084,7 @@
       this.$('classDetailContent').innerHTML = html;
     },
     formatMoney(n) {
-      return (Math.round(n) || 0).toLocaleString('ru-RU') + ' ₽';
+      return (Math.round(n) || 0).toLocaleString(I18N.locale()) + ' ₽';
     },
     /** Текущий выбранный месяц раздела «Клуб» */
     clubMonth() {
@@ -6117,7 +7149,7 @@
 
       var listEl = this.$('clubMembersList');
       if (listEl) {
-        var sorted = State.clubMembers.slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); });
+        var sorted = State.clubMembers.slice().sort(function (a, b) { return a.name.localeCompare(b.name, I18N.collate()); });
         if (!sorted.length) {
           listEl.innerHTML = '<div class="empty"><div class="empty-icon">🏆</div><div>Нет членов клуба — нажмите «+»</div></div>';
         } else {
@@ -6171,7 +7203,7 @@
     renderClubGroupMemberSelect(selectedIds) {
       var box = this.$('clubGroupMemberSelect');
       if (!box) return;
-      var sorted = State.clubMembers.slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'ru'); });
+      var sorted = State.clubMembers.slice().sort(function (a, b) { return a.name.localeCompare(b.name, I18N.collate()); });
       if (!sorted.length) {
         box.innerHTML = '<div class="text-sm text-muted" style="padding:12px">Сначала добавьте членов клуба</div>';
         return;
@@ -6234,6 +7266,189 @@
 
       this.$('clubGroupDetailContent').innerHTML = html;
       this.lockMoneyBubbles();
+    }
+  };
+
+  /* =========================================================
+   * 6b. TOUR — обучение после регистрации
+   * ---------------------------------------------------------
+   * Показывается один раз на аккаунт (флаг в настройках, значит
+   * уезжает в облако вместе с данными). Перезапуск — из Настроек.
+   * Тексты держим двумя языками рядом: так их видно и правится
+   * сразу обе версии, без сюрпризов «перевода перевода».
+   * ========================================================= */
+  const Tour = {
+    _step: 0,
+    _open: false,
+
+    SLIDES: {
+      ru: [
+        {
+          icon: '💃',
+          title: 'Добро пожаловать!',
+          text: 'Это ваш журнал занятий: расписание, клиенты, абонементы и деньги — в одном месте. Пара минут, и вы всё знаете.'
+        },
+        {
+          icon: '📅',
+          title: 'Неделя перед глазами',
+          text: 'Занятия ставятся кнопкой «+». Повторяющееся расписание не надо забивать заново — «Копировать неделю» перенесёт прошлую, а накладки вы разберёте карточками.'
+        },
+        {
+          icon: '🎟',
+          title: 'Клиенты и абонементы',
+          text: 'В карточке клиента выдаётся абонемент на 4, 6 или 8 занятий. Если у занятия включено «Списывать абонемент», посещение спишется само и отметится оплата.'
+        },
+        {
+          icon: '🏆',
+          title: 'Клуб и взносы',
+          text: 'Клуб — это помесячные группы с членским взносом. Состав и суммы за прошедшие месяцы остаются в архиве и не меняются задним числом.'
+        },
+        {
+          icon: '💰',
+          title: 'Деньги сами считаются',
+          text: 'Занятия, абонементы и разовые поступления складываются в месячный итог. Нажмите на строку — увидите, из чего он собрался.'
+        },
+        {
+          icon: '☁️',
+          title: 'Данные не потеряются',
+          text: 'Войдите через Яндекс ID — расписание и клиенты будут на всех ваших устройствах. Тему, цвет и язык можно поменять в Настройках в любой момент.'
+        }
+      ],
+      en: [
+        {
+          icon: '💃',
+          title: 'Welcome!',
+          text: 'This is your teaching log: schedule, clients, class passes and money in one place. Two minutes and you will know your way around.'
+        },
+        {
+          icon: '📅',
+          title: 'Your week at a glance',
+          text: 'Add classes with the “+” button. A repeating timetable does not need retyping — “Copy week” brings last week over, and you settle any overlaps card by card.'
+        },
+        {
+          icon: '🎟',
+          title: 'Clients and passes',
+          text: 'Issue a pass for 4, 6 or 8 classes from the client card. When a class has “Use class pass” turned on, attendance is deducted automatically and marked as paid.'
+        },
+        {
+          icon: '🏆',
+          title: 'The club and its fees',
+          text: 'The club holds monthly groups with a membership fee. Past months keep their roster and amounts in the archive, so nothing changes retroactively.'
+        },
+        {
+          icon: '💰',
+          title: 'The money adds up by itself',
+          text: 'Classes, passes and one-off income roll into a monthly total. Tap any row to see exactly what it is made of.'
+        },
+        {
+          icon: '☁️',
+          title: 'Your data stays safe',
+          text: 'Sign in with Yandex ID and your schedule and clients follow you to every device. Theme, colour and language are always in Settings.'
+        }
+      ]
+    },
+
+    slides() { return this.SLIDES[I18N.lang] || this.SLIDES.ru; },
+
+    seenKey() { return 'dt_tour_seen'; },
+
+    isSeen() {
+      if (State.settings && State.settings.tourSeen) return true;
+      try { return localStorage.getItem(this.seenKey()) === '1'; } catch (e) { return false; }
+    },
+
+    markSeen() {
+      try { localStorage.setItem(this.seenKey(), '1'); } catch (e) {}
+      try {
+        if (State.settings) {
+          State.settings.tourSeen = true;
+          State.persist();
+        }
+      } catch (e) {}
+    },
+
+    /** Показываем только новичкам — тем, кто уже работал, тур не нужен. */
+    maybeStart() {
+      if (this.isSeen()) return;
+      var busy = (State.clients && State.clients.length) || (State.classes && State.classes.length);
+      if (busy) { this.markSeen(); return; }
+      var self = this;
+      setTimeout(function () { self.start(); }, 450);
+    },
+
+    start() {
+      this._step = 0;
+      this._open = true;
+      var el = UI.$('tourOverlay');
+      if (!el) return;
+      el.classList.add('show');
+      document.body.style.overflow = 'hidden';
+      this.render();
+    },
+
+    close() {
+      this._open = false;
+      var el = UI.$('tourOverlay');
+      if (el) el.classList.remove('show');
+      document.body.style.overflow = '';
+      this.markSeen();
+    },
+
+    next() {
+      if (this._step >= this.slides().length - 1) { this.close(); return; }
+      this._step++;
+      this.render();
+    },
+
+    prev() {
+      if (this._step <= 0) return;
+      this._step--;
+      this.render();
+    },
+
+    goto(i) {
+      var n = parseInt(i, 10);
+      if (isNaN(n) || n < 0 || n >= this.slides().length) return;
+      this._step = n;
+      this.render();
+    },
+
+    render() {
+      var slides = this.slides();
+      var s = slides[this._step];
+      if (!s) return;
+      var last = this._step === slides.length - 1;
+      var en = I18N.lang === 'en';
+
+      var card = UI.$('tourCard');
+      if (!card) return;
+
+      var dots = '';
+      for (var i = 0; i < slides.length; i++) {
+        dots += '<button type="button" class="tour-dot' + (i === this._step ? ' active' : '') +
+          '" data-action="tour-goto" data-index="' + i + '" aria-label="' + (i + 1) + '"></button>';
+      }
+
+      card.innerHTML =
+        '<div class="tour-stage" data-no-i18n>' +
+          '<div class="tour-icon">' + s.icon + '</div>' +
+          '<div class="tour-title">' + Domain.escapeHtml(s.title) + '</div>' +
+          '<div class="tour-text">' + Domain.escapeHtml(s.text) + '</div>' +
+        '</div>' +
+        '<div class="tour-dots" data-no-i18n>' + dots + '</div>' +
+        '<div class="tour-actions" data-no-i18n>' +
+          '<button type="button" class="btn btn-primary btn-block" data-action="tour-next">' +
+            (last ? (en ? 'Get started' : 'Начать работу') : (en ? 'Next' : 'Далее')) +
+          '</button>' +
+          (last ? '' :
+            '<button type="button" class="link-btn tour-skip" data-action="tour-skip">' +
+              (en ? 'Skip tutorial' : 'Пропустить обучение') +
+            '</button>') +
+        '</div>';
+
+      // Счётчик шагов читается вслух скринридером и заодно виден глазами
+      var step = UI.$('tourStep');
+      if (step) step.textContent = (this._step + 1) + ' / ' + slides.length;
     }
   };
 
@@ -6578,7 +7793,7 @@
             else UI.showToast('Не удалось синхронизировать');
             var el = document.getElementById('syncStatus');
             if (el) el.textContent = Cloud.canSync()
-              ? ('☁ Активна · ' + new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }))
+              ? (t('☁ Активна') + ' · ' + new Date().toLocaleTimeString(I18N.locale(), { hour: '2-digit', minute: '2-digit' }))
               : 'Только локально';
           })();
           break;
@@ -6609,8 +7824,8 @@
             if (res.ok) {
               UI.showToast('Отправлено в облако: ' + res.count + ' записей');
               var st = document.getElementById('syncStatus');
-              if (st) st.textContent = '☁ Активна · ' +
-                new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+              if (st) st.textContent = t('☁ Активна') + ' · ' +
+                new Date().toLocaleTimeString(I18N.locale(), { hour: '2-digit', minute: '2-digit' });
             } else if (res.reason === 'nothing-to-send') {
               UI.showToast('Отправлять нечего');
             } else {
@@ -6626,7 +7841,7 @@
             box.classList.remove('hidden');
             box.textContent = 'Проверяю…';
             try {
-              box.textContent = await Cloud.diagnose();
+              box.textContent = I18N.tBlock(await Cloud.diagnose());
             } catch (err) {
               box.textContent = 'Ошибка проверки: ' + err.message;
             }
@@ -6667,6 +7882,16 @@
           break;
         }
         case 'import-trigger': UI.$('importFile').click(); break;
+
+        /* —— Язык и обучение —— */
+        case 'lang-pick':
+          I18N.set(el.dataset.langPick);
+          if (Tour._open) Tour.render();
+          break;
+        case 'tour-next': Tour.next(); break;
+        case 'tour-skip': Tour.close(); break;
+        case 'tour-goto': Tour.goto(el.dataset.index); break;
+        case 'tour-restart': Tour.start(); break;
       }
     },
     onWeekChange(dir) {
@@ -7451,6 +8676,7 @@
          тогда приложению закрываться не надо. */
       window.__dtHandleBack = function () {
         try {
+          if (Tour._open) { Tour.close(); return true; }
           if (UI.$('askModal') && UI.$('askModal').classList.contains('show')) {
             UI._closeAsk(false);
             return true;
@@ -7641,7 +8867,12 @@
         var rows = Domain.COUNTRIES.filter(function (c) {
           if (!q) return true;
           if (digits && c.d.indexOf(digits) === 0) return true;
-          return c.n.toLowerCase().indexOf(q) === 0 || c.n.toLowerCase().indexOf(' ' + q) !== -1;
+          /* Ищем и по русскому, и по текущему названию: человек может
+             набрать «Герм» на русском интерфейсе и «Germ» на английском. */
+          var names = [c.n.toLowerCase(), I18N.countryName(c).toLowerCase()];
+          return names.some(function (n) {
+            return n.indexOf(q) === 0 || n.indexOf(' ' + q) !== -1;
+          });
         });
         if (!rows.length) {
           box.innerHTML = '<p class="text-sm text-muted" style="padding:12px;">Ничего не нашлось</p>';
@@ -7650,7 +8881,7 @@
         box.innerHTML = rows.map(function (c) {
           return '<button type="button" class="cc-item" data-iso="' + c.c + '">' +
             '<span class="cc-flag">' + c.f + '</span>' +
-            '<span class="cc-name">' + Domain.escapeHtml(c.n) + '</span>' +
+            '<span class="cc-name">' + Domain.escapeHtml(I18N.countryName(c)) + '</span>' +
             '<span class="cc-dial">+' + c.d + '</span></button>';
         }).join('');
       }
@@ -7766,6 +8997,8 @@
     window.addEventListener('popstate', function () {
       // Это отклик на наш собственный back() — окно уже закрыто, ничего не делаем
       if (UI._pendingBack > 0) { UI._pendingBack--; return; }
+
+      if (Tour._open) { Tour.close(); return; }
 
       if (UI.$('askModal') && UI.$('askModal').classList.contains('show')) {
         UI._closeAsk(false);
@@ -8008,6 +9241,8 @@
     UI.applyTheme();
     UI.renderSchedule();
     UI.renderClients();
+    I18N.syncSwitches();
+    Tour.maybeStart();
   }
 
   /* —— Тумблер «Телефон / Email» на входе и регистрации ——
@@ -8066,6 +9301,13 @@
   }
 
   async function boot() {
+    /* Язык — первым делом: разметка должна прийти уже переведённой,
+       иначе на секунду мелькает русский. */
+    I18N.init();
+    I18N.applyDom(document.body);
+    I18N.observe();
+    I18N.syncSwitches();
+
     bindEvents();
     setupPwaManifest();
     Storage.init();
@@ -8158,7 +9400,7 @@
   else boot();
 
   /** Отладка: window.DanceTrainer.State / Services / Domain */
-  window.DanceTrainer = { CONFIG: CONFIG, Storage: Storage, State: State, Domain: Domain, Auth: Auth, Cloud: Cloud, Services: Services, UI: UI, Controllers: Controllers };
+  window.DanceTrainer = { CONFIG: CONFIG, Storage: Storage, State: State, Domain: Domain, Auth: Auth, Cloud: Cloud, Services: Services, UI: UI, Controllers: Controllers, I18N: I18N, Tour: Tour };
 })();
 
 </script>
