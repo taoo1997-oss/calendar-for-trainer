@@ -64,6 +64,9 @@
       --sat: env(safe-area-inset-top, 0px);
       --sar: env(safe-area-inset-right, 0px);
       --sab: env(safe-area-inset-bottom, 0px);
+      /* Отступ для нижней панели: полный вырез слишком высокий, под
+         индикатором дома достаточно 20px. Контенту оставляем полный. */
+      --sab-nav: min(var(--sab), 20px);
       --sal: env(safe-area-inset-left, 0px);
       --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     }
@@ -218,7 +221,7 @@
       line-height: 1.45;
       min-height: 100vh;
       /* нижняя навигация + системная жестовая полоса */
-      padding-bottom: calc(var(--nav-h) + var(--sab) + 16px);
+      padding-bottom: calc(var(--nav-h) + var(--sab-nav) + 16px);
       overscroll-behavior-y: none;
       font-size: 14px;
       /* WebView в APK самовольно раздувает шрифты («font boosting»),
@@ -259,12 +262,12 @@
 
     .bottom-nav {
       position: fixed; bottom: 0; left: 0; right: 0;
-      height: calc(var(--nav-h) + var(--sab));
+      height: calc(var(--nav-h) + var(--sab-nav));
       background: var(--card);
       border-top: 1px solid var(--border);
       display: flex;
       z-index: 100;
-      padding-bottom: var(--sab);
+      padding-bottom: var(--sab-nav);
       padding-left: var(--sal);
       padding-right: var(--sar);
     }
@@ -314,7 +317,7 @@
 
     .fab {
       position: fixed;
-      bottom: calc(var(--nav-h) + var(--sab) + 16px);
+      bottom: calc(var(--nav-h) + var(--sab-nav) + 16px);
       right: calc(var(--sar) + 20px);
       width: 52px; height: 52px; border-radius: 50%;
       background: var(--primary); color: white; border: none; font-size: 24px;
@@ -801,12 +804,12 @@
     /* Свой диалог: спрашиваем и предупреждаем в стилистике приложения,
        а не системным окном браузера с чужими шрифтами и кнопками. */
     #askModal { z-index: 800; align-items: center; padding: 24px; }
-    .ask-modal {
+    .modal.ask-modal {
       border-radius: 22px; max-width: 380px;
-      padding: 24px max(20px, var(--sal)) 20px max(20px, var(--sar));
+      padding: 26px max(20px, var(--sal)) 20px max(20px, var(--sar));
       text-align: center; box-shadow: 0 18px 50px rgba(0,0,0,0.32);
     }
-    .ask-icon { font-size: 2rem; line-height: 1; margin-bottom: 10px; }
+    .ask-icon { font-size: 2rem; line-height: 1; margin-bottom: 14px; }
     .ask-title { font-size: 1.05rem; font-weight: 700; color: var(--text); margin-bottom: 8px; }
     .ask-text {
       font-size: 0.88rem; color: var(--text-muted); line-height: 1.45;
@@ -827,7 +830,7 @@
     .ask-list-what { color: var(--text-muted); }
     /* Свой календарь */
     #calendarModal { z-index: 640; align-items: center; padding: 20px; }
-    .cal-modal { border-radius: 22px; max-width: 360px; padding: 18px 16px 16px; }
+    .modal.cal-modal { border-radius: 22px; max-width: 360px; padding: 18px 16px 16px; }
     .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
     .cal-title { font-size: 1rem; font-weight: 700; color: var(--text); text-transform: capitalize; }
     .cal-nav {
@@ -856,7 +859,7 @@
 
     /* Окно накладок: две (или больше) карточки на выбор */
     #conflictModal { z-index: 660; align-items: center; padding: 20px; }
-    .conflict-modal { border-radius: 22px; max-width: 420px; padding: 20px 16px 16px; }
+    .modal.conflict-modal { border-radius: 22px; max-width: 420px; padding: 20px 16px 16px; }
     .conflict-head { text-align: center; margin-bottom: 14px; }
     .conflict-step { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
     .conflict-when { font-size: 1.05rem; font-weight: 700; color: var(--text); margin-top: 4px; }
@@ -1762,6 +1765,13 @@
         </div>
       </div>
       <div class="settings-block">
+        <h3>Валюта</h3>
+        <div class="form-group" style="margin:0;">
+          <select id="settingCurrency" data-no-i18n></select>
+        </div>
+        <p class="text-sm text-muted" style="margin-top:8px;font-size:0.72rem;">Меняется только знак валюты. Суммы не пересчитываются по курсу — в журнале остаются те деньги, которые вы получили.</p>
+      </div>
+      <div class="settings-block">
         <h3>Тема</h3>
         <div class="theme-options" id="themeOptions">
           <button type="button" class="theme-option" data-theme-pick="light">
@@ -2174,7 +2184,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-15 · 47',
+    BUILD: '2026-08-15 · 48',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -2239,6 +2249,7 @@
       this.applyLangAttrs();
       this.retranslate();
       this.syncSwitches();
+      try { Money.fillSelect(); } catch (e) {}
       if (!opts || opts.rerender !== false) {
         try {
           if (typeof UI !== 'undefined' && State && State.currentUser) {
@@ -2422,6 +2433,8 @@
 
     applyDom(root) {
       if (this._busy) return;
+      if (this.lang === 'ru' && !Money.active() && !this._everTranslated) return;
+      this._everTranslated = true;
       this._busy = true;
       try {
         this._walk(root || document.body);
@@ -2459,6 +2472,7 @@
       else if (cur !== node.__i18nRu && cur !== node.__i18nOut) node.__i18nRu = cur;
       var src = node.__i18nRu;
       var out = this.lang === 'ru' ? src : this.t(src);
+      out = Money.subst(out);
       node.__i18nOut = out;
       if (out !== cur) node.nodeValue = out;
     },
@@ -2473,7 +2487,7 @@
         if (el.dataset[store] === undefined) el.dataset[store] = cur;
         else if (cur !== el.dataset[store] && cur !== el.dataset[outStore]) el.dataset[store] = cur;
         var src = el.dataset[store];
-        var out = this.lang === 'ru' ? src : this.t(src);
+        var out = Money.subst(this.lang === 'ru' ? src : this.t(src));
         el.dataset[outStore] = out;
         if (out !== cur) el.setAttribute(a, out);
       }
@@ -2490,7 +2504,8 @@
       if (this._observer || typeof MutationObserver === 'undefined') return;
       var self = this;
       this._observer = new MutationObserver(function (records) {
-        if (self.lang === 'ru' || self._busy) return;
+        if (self._busy) return;
+        if (self.lang === 'ru' && !Money.active()) return;
         self._busy = true;
         try {
           for (var i = 0; i < records.length; i++) {
@@ -2796,6 +2811,9 @@
       'Stored on this device. Yandex ID / SMS need a server — this is a local profile.',
     'Название календаря': 'Calendar name',
     'Язык': 'Language',
+    'Валюта': 'Currency',
+    'Меняется только знак валюты. Суммы не пересчитываются по курсу — в журнале остаются те деньги, которые вы получили.':
+      'Only the currency symbol changes. Amounts are not converted at any exchange rate — the log keeps the money you actually took.',
     'Тема': 'Theme',
     'Светлая': 'Light',
     'Тёмная': 'Dark',
@@ -3115,6 +3133,108 @@
     }],
     [/^нажмите, чтобы убрать запись$/, 'tap to remove an entry']
   ];
+
+
+  /* =========================================================
+   * 1c. MONEY — валюта учёта
+   * ---------------------------------------------------------
+   * Меняется только знак и его место в строке. Суммы НЕ пересчитываются:
+   * курс — вещь плавающая, а в журнале лежат реальные полученные деньги.
+   * Тренер, который ведёт учёт в евро, вводит евро — и видит евро.
+   * ========================================================= */
+  const Money = {
+    KEY: 'dt_currency',
+    code: 'RUB',
+
+    LIST: [
+      { code: 'RUB', sym: '₽', pos: 'after',  ru: 'Рубль',      en: 'Russian rouble' },
+      { code: 'USD', sym: '$', pos: 'before', ru: 'Доллар США', en: 'US dollar' },
+      { code: 'EUR', sym: '€', pos: 'before', ru: 'Евро',       en: 'Euro' },
+      { code: 'GBP', sym: '£', pos: 'before', ru: 'Фунт',       en: 'British pound' },
+      { code: 'AMD', sym: '֏', pos: 'after',  ru: 'Драм',       en: 'Armenian dram' },
+      { code: 'KZT', sym: '₸', pos: 'after',  ru: 'Тенге',      en: 'Kazakh tenge' },
+      { code: 'UAH', sym: '₴', pos: 'after',  ru: 'Гривна',     en: 'Ukrainian hryvnia' },
+      { code: 'TRY', sym: '₺', pos: 'before', ru: 'Лира',       en: 'Turkish lira' },
+      { code: 'GEL', sym: '₾', pos: 'after',  ru: 'Лари',       en: 'Georgian lari' },
+      { code: 'PLN', sym: 'zł', pos: 'after', ru: 'Злотый',     en: 'Polish złoty' }
+    ],
+
+    byCode(code) {
+      for (var i = 0; i < this.LIST.length; i++) {
+        if (this.LIST[i].code === code) return this.LIST[i];
+      }
+      return this.LIST[0];
+    },
+    current() { return this.byCode(this.code); },
+    symbol() { return this.current().sym; },
+    /** Знак отличается от рублёвого — значит подписи надо подменять. */
+    active() { return this.code !== 'RUB'; },
+    label(c) { return (I18N.lang === 'en' ? c.en : c.ru) + ' · ' + c.sym; },
+
+    init() {
+      var saved = '';
+      try { saved = localStorage.getItem(this.KEY) || ''; } catch (e) {}
+      if (!saved && State.settings && State.settings.currency) saved = State.settings.currency;
+      this.code = this.byCode(saved).code;
+    },
+
+    /** Настройки приезжают из облака позже входа — подхватываем оттуда. */
+    adoptFromSettings() {
+      var fromCloud = State.settings && State.settings.currency;
+      if (!fromCloud) {
+        if (State.settings) State.settings.currency = this.code;
+        return;
+      }
+      if (fromCloud === this.code) return;
+      this.code = this.byCode(fromCloud).code;
+      try { localStorage.setItem(this.KEY, this.code); } catch (e) {}
+    },
+
+    set(code) {
+      var c = this.byCode(code);
+      if (c.code === this.code) return;
+      this.code = c.code;
+      try { localStorage.setItem(this.KEY, this.code); } catch (e) {}
+      try {
+        if (State.settings) { State.settings.currency = this.code; State.persist(); }
+      } catch (e) {}
+      I18N.retranslate();
+      try {
+        if (State.currentUser) {
+          UI.renderSchedule();
+          UI.renderClients();
+          UI.renderClub();
+        }
+      } catch (e) {}
+      this.fillSelect();
+    },
+
+    /** Сумма со знаком: «1 200 ₽», но «$1,200» — у каждой валюты своё место. */
+    format(n) {
+      var c = this.current();
+      var num = (Math.round(n) || 0).toLocaleString(I18N.locale());
+      return c.pos === 'before' ? c.sym + num : num + ' ' + c.sym;
+    },
+
+    /* Знак рубля зашит в десятках подписей («Стоимость занятия, ₽»).
+       Переписывать их по одной незачем — подменяем на выходе, там же,
+       где работает перевод. Источник в узле остаётся с ₽. */
+    subst(str) {
+      if (!this.active() || !str || str.indexOf('₽') === -1) return str;
+      return str.split('₽').join(this.symbol());
+    },
+
+    fillSelect() {
+      var sel = document.getElementById('settingCurrency');
+      if (!sel) return;
+      var self = this;
+      sel.innerHTML = this.LIST.map(function (c) {
+        return '<option value="' + c.code + '"' + (c.code === self.code ? ' selected' : '') + '>' +
+          Domain.escapeHtml(self.label(c)) + '</option>';
+      }).join('');
+      sel.value = this.code;
+    }
+  };
 
   /* =========================================================
    * 2. STORAGE
@@ -7084,7 +7204,7 @@
       this.$('classDetailContent').innerHTML = html;
     },
     formatMoney(n) {
-      return (Math.round(n) || 0).toLocaleString(I18N.locale()) + ' ₽';
+      return Money.format(n);
     },
     /** Текущий выбранный месяц раздела «Клуб» */
     clubMonth() {
@@ -9133,6 +9253,11 @@
       });
     }
     UI.$('clientSearch').addEventListener('input', function () { UI.renderClients(); });
+    Money.fillSelect();
+    var currencySel = UI.$('settingCurrency');
+    if (currencySel) {
+      currencySel.addEventListener('change', function () { Money.set(currencySel.value); });
+    }
     UI.$('settingCalendarName').addEventListener('change', function () { Controllers.saveSettingsFromForm(); });
     UI.$('settingColor').addEventListener('change', function () { Controllers.saveSettingsFromForm(); });
     UI.$('styleOptions').addEventListener('click', function (e) {
@@ -9242,6 +9367,9 @@
     UI.renderSchedule();
     UI.renderClients();
     I18N.syncSwitches();
+    Money.adoptFromSettings();
+    Money.fillSelect();
+    I18N.retranslate();
     Tour.maybeStart();
   }
 
@@ -9304,6 +9432,7 @@
     /* Язык — первым делом: разметка должна прийти уже переведённой,
        иначе на секунду мелькает русский. */
     I18N.init();
+    Money.init();
     I18N.applyDom(document.body);
     I18N.observe();
     I18N.syncSwitches();
