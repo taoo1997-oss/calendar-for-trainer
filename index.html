@@ -226,7 +226,7 @@
     [data-theme="black"] .modal-close { background: rgba(255,255,255,0.07); color: var(--text); }
     [data-theme="black"] .day-btn { background: #101010; border-color: #1f1f1f; }
     [data-theme="black"] .contact-pick-head { background: var(--card); }
-    [data-theme="black"] .contact-avatar { background: rgba(255,255,255,0.07); color: var(--text); }
+    [data-theme="black"] .person-avatar { background: rgba(255,255,255,0.07); color: var(--text); }
     [data-theme="black"] .money-row-icon { background: rgba(255,255,255,0.05); }
     [data-theme="black"] .btn-secondary {
       background: rgba(255,255,255,0.06); color: var(--text);
@@ -560,18 +560,38 @@
     /* Свой список выбора вместо системного <select>: тот приходил
        чужим окном с чужими шрифтами и своей темой. */
     #pickSheet { z-index: 700; }
-    .pick-list { margin: 0 -6px; }
+    .pick-list { margin: 0; display: flex; flex-direction: column; gap: 8px; }
+    /* Каждый вариант — карточка в рамке. Раньше строки шли встык без
+       границ, и список читался как сплошное полотно.
+
+       Ряд перестроен в колонку: подпись стоит ПОД названием, а не
+       справа от него. В строку она не помещалась — «Один клиент, пара
+       или мини-группа» налезала прямо на слово «Персональное». */
     .pick-item {
-      display: flex; align-items: center; gap: 12px; width: 100%;
-      padding: 14px 12px; border: none; border-radius: 14px;
-      background: none; color: var(--text); cursor: pointer;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 2px 12px; width: 100%;
+      padding: 13px 14px;
+      border: 1px solid var(--border); border-radius: 14px;
+      background: var(--card); color: var(--text); cursor: pointer;
       font-family: inherit; font-size: 0.95rem; text-align: left;
     }
-    .pick-item:active { background: var(--primary-light); }
-    .pick-item.active { background: var(--primary-light); font-weight: 600; }
-    .pick-item-label { flex: 1; min-width: 0; }
-    .pick-item-note { font-size: 0.78rem; color: var(--text-muted); }
-    .pick-item-mark { color: var(--primary); font-size: 1rem; opacity: 0; }
+    .pick-item:active { background: var(--bg); }
+    .pick-item.active { border-color: var(--primary); background: var(--primary-light); }
+    .pick-item-label {
+      grid-column: 1; min-width: 0;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .pick-item.active .pick-item-label { font-weight: 600; }
+    .pick-item-note {
+      grid-column: 1; font-size: 0.78rem; color: var(--text-muted);
+      line-height: 1.3;
+    }
+    .pick-item-mark {
+      grid-column: 2; grid-row: 1 / -1;
+      color: var(--primary); font-size: 1rem; opacity: 0;
+    }
     .pick-item.active .pick-item-mark { opacity: 1; }
 
     /* Кнопка, которая выглядит как поле ввода, но открывает свой список */
@@ -666,22 +686,34 @@
       padding: 8px 14px; border-radius: 999px; border: 1px solid var(--border);
       background: var(--card); color: var(--text-muted); font-size: 0.8125rem;
       font-weight: 500; cursor: pointer; font-family: inherit;
+      /* Высоту задаём явно и одинаково с полем «своя»: у input и button
+         разные встроенные отступы, и на глаз поле выходило ниже фишек. */
+      min-height: 36px; line-height: 18px; box-sizing: border-box;
     }
     .chip.active {
       background: var(--primary); color: white; border-color: var(--primary);
     }
     /* Вес селектора здесь не украшение, а лечение. Выше по файлу стоит
        `.form-group input { width: 100% }` — селектор с типом элемента
-       тяжелее селектора с одним классом, поэтому width:72px проигрывал,
-       поле «своя» распирало ряд на всю ширину и выдавливало себя на
-       отдельную строку под «120 мин». */
+       тяжелее селектора с одним классом, поэтому фиксированная ширина
+       проигрывала, и поле распирало ряд на всю строку.
+
+       Теперь ширина не фиксированная, а «занять остаток ряда»: поле
+       дотягивается до правого края, вставая вровень с «75 мин» из
+       строки выше. flex-basis:0 заставляет его считать свою долю от
+       свободного места, а не от содержимого. */
     .chip-row .chip-custom {
-      width: 76px; flex: 0 0 auto; padding: 8px 10px; border-radius: 999px;
+      flex: 1 1 0; min-width: 76px;
+      padding: 8px 14px; border-radius: 999px;
       border: 1px solid var(--border);
       font-size: 0.8125rem; text-align: center; background: var(--card); color: var(--text);
       font-family: inherit;
+      min-height: 36px; line-height: 18px; box-sizing: border-box;
     }
-    .chip-row .chip-custom.active { border-color: var(--primary); color: var(--primary); font-weight: 600; }
+    .chip-row .chip-custom:focus {
+      outline: none; border-color: var(--primary);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent);
+    }
 
     .client-avatar {
       width: 40px; height: 40px; border-radius: 50%;
@@ -1258,16 +1290,85 @@
     /* Окно множественного выбора с поиском. Клиентов у тренера
        под сотню — разворачивающийся список внутри формы для такого
        объёма непригоден: он либо коротенький и в нём не найти, либо
-       выдавливает всю форму вниз. */
+       выдавливает всю форму вниз.
+       Внешний вид рядов — общий (.person-row), см. ниже. */
     #multiPickSheet { z-index: 700; }
-    .multi-pick-search { margin-bottom: 10px; }
-    .multi-pick-list {
-      flex: 1 1 auto; min-height: 0; overflow-y: auto;
-      -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
-      margin: 0 -4px; padding: 0 4px;
+
+    /* —— Общий ряд «человек с аватаркой» ——
+       Один вид для всех списков людей: контакты телефона, выбор
+       клиентов в занятие, состав группы клуба. Раньше каждый экран
+       рисовал своё, и приложение выглядело собранным из трёх разных.
+       Разметка совпадает с .contact-pick-row намеренно — это она и
+       есть, вынесенная в общее место. */
+    .person-list {
+      margin: 4px -4px 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
     }
-    .multi-pick-empty { padding: 24px 12px; text-align: center; color: var(--text-muted); font-size: 0.85rem; }
-    .multi-pick-count { font-size: 0.8rem; color: var(--text-muted); }
+    /* label.person-row, а не просто .person-row — снова вопрос веса
+       селектора. Выше стоит `.form-group label { display: block }`, и
+       внутри формы группы ряд разваливался в столбик: аватарка, имя и
+       галочка вставали друг под другом. Заодно сбрасываем типографику,
+       которую то же правило навязывает подписям полей. */
+    .person-row,
+    label.person-row {
+      display: flex; align-items: center; gap: 14px;
+      padding: 12px 6px; cursor: pointer; border-radius: 14px;
+      margin-bottom: 0; font-size: inherit; color: inherit;
+      font-weight: 400; letter-spacing: normal; text-transform: none;
+    }
+    .person-row + .person-row { border-top: 1px solid var(--border); }
+    .person-row:active { background: var(--bg); }
+    .person-row input[type="checkbox"] {
+      width: 24px; height: 24px; flex: 0 0 auto; accent-color: var(--primary);
+      order: 3; margin-left: auto;
+    }
+    .person-avatar {
+      flex: 0 0 auto; width: 44px; height: 44px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--primary-light); color: var(--primary);
+      font-weight: 700; font-size: 1.05rem; letter-spacing: -0.01em;
+    }
+    .person-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+    .person-name {
+      font-weight: 600; font-size: 0.975rem; color: var(--text);
+      letter-spacing: -0.01em;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .person-sub {
+      font-size: 0.8rem; color: var(--text-muted); letter-spacing: 0.01em;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    [data-theme="dark"] .person-avatar,
+    [data-theme="black"] .person-avatar { background: rgba(255,255,255,0.07); color: var(--text); }
+
+    /* Шапка со строкой поиска — как в «Контактах телефона» */
+    .person-pick-head { background: var(--card); padding: 2px 0 10px; flex: 0 0 auto; }
+    .person-search { position: relative; }
+    .person-search-icon {
+      position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+      font-size: 0.85rem; opacity: 0.5; pointer-events: none;
+    }
+    .person-search input {
+      width: 100%; padding: 12px 14px 12px 38px;
+      border: 1px solid var(--border); border-radius: 12px;
+      background: var(--card); color: var(--text);
+      font-family: inherit; font-size: 0.9375rem;
+    }
+    .person-search input:focus { outline: none; border-color: var(--primary); }
+    .person-pick-count {
+      font-size: 0.75rem; color: var(--text-muted); margin-top: 12px;
+      display: flex; justify-content: space-between; align-items: center; gap: 8px;
+      padding: 0 4px;
+    }
+    .person-empty {
+      padding: 32px 12px; text-align: center; color: var(--text-muted); font-size: 0.85rem;
+    }
+    /* Тот же ряд, но внутри формы: в рамке и с ограниченной высотой,
+       чтобы длинный список не растягивал окно до бесконечности. */
+    .person-list-boxed {
+      max-height: 260px; margin: 0;
+      border: 1px solid var(--border); border-radius: 12px; padding: 2px 8px;
+    }
 
     .client-select-list {
       max-height: 220px; overflow-y: auto; border: 1px solid var(--border);
@@ -1645,36 +1746,11 @@
       max-height: 52vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
       margin: 4px -4px 14px;
     }
-    .contact-pick-row {
-      display: flex; align-items: center; gap: 14px;
-      padding: 12px 6px; cursor: pointer; border-radius: 14px;
-    }
-    .contact-pick-row + .contact-pick-row { border-top: 1px solid var(--border); }
-    .contact-pick-row:active { background: var(--bg); }
+    /* Ряд контакта — тот же .person-row. Два одинаковых набора правил
+       рядом жить не должны: подкрутишь один, забудешь другой, и экраны
+       разъедутся ровно так, как разъезжались до объединения. */
     .contact-pick-row.is-existing { opacity: 0.4; }
-    .contact-pick-row input[type="checkbox"] {
-      width: 24px; height: 24px; flex: 0 0 auto; accent-color: var(--primary);
-      order: 3; margin-left: auto;
-    }
-    .contact-avatar {
-      flex: 0 0 auto; width: 44px; height: 44px; border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      background: var(--primary-light); color: var(--primary);
-      font-weight: 700; font-size: 1.05rem; letter-spacing: -0.01em;
-    }
-    .contact-avatar.is-number { font-size: 1rem; opacity: 0.7; }
-    .contact-pick-info {
-      flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px;
-    }
-    .contact-pick-name {
-      font-weight: 600; font-size: 0.975rem; color: var(--text);
-      letter-spacing: -0.01em;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    .contact-pick-phone {
-      font-size: 0.8rem; color: var(--text-muted); letter-spacing: 0.01em;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
+    .person-avatar.is-number { font-size: 1rem; opacity: 0.7; }
     .contact-pick-tag {
       font-size: 0.62rem; font-weight: 600; color: var(--text-muted);
       border: 1px solid var(--border); border-radius: 999px;
@@ -2227,7 +2303,22 @@
         <div class="form-group"><label>Название группы *</label><input type="text" id="clubGroupName" required placeholder="Латина · вечер"></div>
         <div class="form-group"><label>Членский взнос (₽) *</label><input type="number" id="clubGroupFee" required min="0" step="100" placeholder="3000" value="3000"></div>
         <div class="form-group"><label>Комментарий</label><textarea id="clubGroupNotes" rows="2" placeholder="Зал, расписание..."></textarea></div>
-        <div class="form-group"><label>Участники</label><div class="client-select-list" id="clubGroupMemberSelect"></div></div>
+        <div class="form-group">
+          <label>Участники</label>
+          <!-- Список членов клуба растёт так же, как список клиентов,
+               поэтому у него та же шапка с поиском и тот же вид рядов. -->
+          <div class="person-pick-head" style="padding-top:0;">
+            <div class="person-search">
+              <span class="person-search-icon">🔍</span>
+              <input type="text" id="clubGroupMemberSearch" placeholder="Имя или номер" autocomplete="off">
+            </div>
+            <div class="person-pick-count">
+              <span id="clubGroupMemberCount">Никто не выбран</span>
+              <button type="button" class="link-btn" id="clubGroupMemberClear">Снять все</button>
+            </div>
+          </div>
+          <div class="person-list person-list-boxed" id="clubGroupMemberSelect"></div>
+        </div>
         <div class="flex gap-2 mt-3">
           <button type="button" class="btn btn-secondary btn-block" data-close="clubGroupModal">Отмена</button>
           <button type="submit" class="btn btn-primary btn-block">Сохранить</button>
@@ -2373,19 +2464,23 @@
   -->
   <div class="modal-overlay" id="multiPickSheet">
     <div class="modal modal-flex">
+      <div class="modal-handle"></div>
       <div class="modal-header">
         <div class="modal-title" id="multiPickTitle">Выбор</div>
-        <button type="button" class="modal-close" data-close="multiPickSheet">×</button>
+        <button type="button" class="modal-close" data-close="multiPickSheet">✕</button>
       </div>
-      <div class="form-group multi-pick-search" style="margin-bottom:10px;">
-        <input type="text" id="multiPickSearch" placeholder="Поиск по имени или телефону" autocomplete="off">
-      </div>
-      <div class="multi-pick-list modal-body" id="multiPickList" data-no-i18n></div>
-      <div class="modal-foot">
-        <div class="flex justify-between items-center mb-2">
-          <span class="multi-pick-count" id="multiPickCount">Никто не выбран</span>
+      <div class="person-pick-head">
+        <div class="person-search">
+          <span class="person-search-icon">🔍</span>
+          <input type="text" id="multiPickSearch" placeholder="Имя или номер" autocomplete="off">
+        </div>
+        <div class="person-pick-count">
+          <span id="multiPickCount">Никто не выбран</span>
           <button type="button" class="link-btn" id="multiPickClear">Снять все</button>
         </div>
+      </div>
+      <div class="person-list modal-body" id="multiPickList" data-no-i18n></div>
+      <div class="modal-foot">
         <button type="button" class="btn btn-primary btn-block" id="multiPickDone">Готово</button>
       </div>
     </div>
@@ -2431,7 +2526,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-17 · 51',
+    BUILD: '2026-08-17 · 53',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -6614,7 +6709,7 @@
       var search = this.$('multiPickSearch');
       if (search) {
         search.value = '';
-        search.placeholder = I18N.t(o.placeholder || 'Поиск по имени или телефону');
+        search.placeholder = I18N.t(o.placeholder || 'Имя или номер');
       }
       UI._multiItems = o.items || [];
       UI._multiChosen = {};
@@ -6639,17 +6734,20 @@
         return hay.indexOf(q) !== -1;
       });
       if (!rows.length) {
-        box.innerHTML = '<div class="multi-pick-empty">' +
+        box.innerHTML = '<div class="person-empty">' +
           Domain.escapeHtml(I18N.t(q ? 'Ничего не нашлось' : UI._multiEmptyText)) + '</div>';
       } else {
         box.innerHTML = rows.map(function (it) {
-          return '<label class="client-select-item">' +
+          var initial = (it.label || '?').trim().charAt(0).toUpperCase();
+          return '<label class="person-row">' +
+            '<span class="person-avatar">' + Domain.escapeHtml(initial) + '</span>' +
+            '<span class="person-info">' +
+              '<span class="person-name">' + Domain.escapeHtml(it.label) + (it.badge || '') + '</span>' +
+              (it.note ? '<span class="person-sub">' + Domain.escapeHtml(it.note) + '</span>' : '') +
+            '</span>' +
             '<input type="checkbox" value="' + Domain.escapeHtml(it.value) + '"' +
               (UI._multiChosen[it.value] ? ' checked' : '') + '>' +
-            '<span class="client-select-meta">' +
-              '<span class="client-select-name">' + Domain.escapeHtml(it.label) + (it.badge || '') + '</span>' +
-              (it.note ? '<span class="client-select-phone">' + Domain.escapeHtml(it.note) + '</span>' : '') +
-            '</span></label>';
+            '</label>';
         }).join('');
       }
       this.updateMultiPickCount();
@@ -6711,13 +6809,13 @@
            Показывать номер дважды незачем — вырезаем его из имени. */
         var shownName = UI.cleanContactName(name, phone);
         var initial = UI.contactInitial(shownName);
-        html += '<label class="contact-pick-row' + (exists ? ' is-existing' : '') + '">' +
-          '<span class="contact-avatar' + (initial === '#' ? ' is-number' : '') + '">' +
+        html += '<label class="person-row contact-pick-row' + (exists ? ' is-existing' : '') + '">' +
+          '<span class="person-avatar' + (initial === '#' ? ' is-number' : '') + '">' +
             Domain.escapeHtml(initial) + '</span>' +
-          '<span class="contact-pick-info">' +
-            '<span class="contact-pick-name">' + Domain.escapeHtml(shownName) +
+          '<span class="person-info">' +
+            '<span class="person-name">' + Domain.escapeHtml(shownName) +
               (exists ? '<span class="contact-pick-tag">уже добавлен</span>' : '') + '</span>' +
-            (phone ? '<span class="contact-pick-phone">' + Domain.escapeHtml(phone) + '</span>' : '') +
+            (phone ? '<span class="person-sub">' + Domain.escapeHtml(phone) + '</span>' : '') +
           '</span>' +
           '<input type="checkbox" data-index="' + i + '"' + (exists ? ' disabled' : '') + '>' +
         '</label>';
@@ -7821,25 +7919,67 @@
       } else {
         this.$('clubGroupModalTitle').textContent = 'Новая группа';
       }
-      this.renderClubGroupMemberSelect(selected);
+      this.fillClubGroupMemberSelect(selected);
     },
-    renderClubGroupMemberSelect(selectedIds) {
+    /**
+     * Список членов клуба при формировании группы.
+     *
+     * Отмеченные держим в UI._groupChosen, а не в чекбоксах — по той же
+     * причине, что и в окне выбора клиентов: список фильтруется поиском,
+     * и человек, уехавший из выдачи, обязан остаться отмеченным.
+     */
+    _groupChosen: {},
+    fillClubGroupMemberSelect(selectedIds) {
+      UI._groupChosen = {};
+      (selectedIds || []).forEach(function (id) { UI._groupChosen[id] = true; });
+      var search = this.$('clubGroupMemberSearch');
+      if (search) search.value = '';
+      this.renderClubGroupMemberSelect('');
+    },
+    renderClubGroupMemberSelect(query) {
       var box = this.$('clubGroupMemberSelect');
       if (!box) return;
-      var sorted = State.clubMembers.slice().sort(function (a, b) { return a.name.localeCompare(b.name, I18N.collate()); });
+      var q = (query || '').trim().toLowerCase();
+      var sorted = State.clubMembers.slice().sort(function (a, b) {
+        return a.name.localeCompare(b.name, I18N.collate());
+      });
       if (!sorted.length) {
-        box.innerHTML = '<div class="text-sm text-muted" style="padding:12px">Сначала добавьте членов клуба</div>';
+        box.innerHTML = '<div class="person-empty">Сначала добавьте членов клуба</div>';
+        this.updateClubGroupMemberCount();
         return;
       }
-      selectedIds = selectedIds || [];
-      box.innerHTML = sorted.map(function (m) {
-        var disc = m.discount > 0 ? ' <span class="club-discount-badge">−' + UI.formatMoney(m.discount) + '</span>' : '';
-        return '<label class="client-select-item">' +
-          '<input type="checkbox" value="' + m.id + '" ' + (selectedIds.indexOf(m.id) >= 0 ? 'checked' : '') + '>' +
-          '<span class="client-select-meta"><span class="client-select-name">' + Domain.escapeHtml(m.name) + disc + '</span>' +
-          (m.phone ? '<span class="client-select-phone">' + Domain.escapeHtml(m.phone) + '</span>' : '') +
-          '</span></label>';
+      var rows = sorted.filter(function (m) {
+        if (!q) return true;
+        return (m.name + ' ' + (m.phone || '')).toLowerCase().indexOf(q) !== -1;
+      });
+      if (!rows.length) {
+        box.innerHTML = '<div class="person-empty">Ничего не нашлось</div>';
+        this.updateClubGroupMemberCount();
+        return;
+      }
+      box.innerHTML = rows.map(function (m) {
+        var disc = m.discount > 0
+          ? ' <span class="club-discount-badge">−' + UI.formatMoney(m.discount) + '</span>' : '';
+        var initial = (m.name || '?').trim().charAt(0).toUpperCase();
+        return '<label class="person-row">' +
+          '<span class="person-avatar">' + Domain.escapeHtml(initial) + '</span>' +
+          '<span class="person-info">' +
+            '<span class="person-name">' + Domain.escapeHtml(m.name) + disc + '</span>' +
+            (m.phone ? '<span class="person-sub">' + Domain.escapeHtml(m.phone) + '</span>' : '') +
+          '</span>' +
+          '<input type="checkbox" value="' + m.id + '"' + (UI._groupChosen[m.id] ? ' checked' : '') + '>' +
+          '</label>';
       }).join('');
+      this.updateClubGroupMemberCount();
+    },
+    updateClubGroupMemberCount() {
+      var el = this.$('clubGroupMemberCount');
+      if (!el) return;
+      var n = Object.keys(UI._groupChosen).filter(function (k) { return UI._groupChosen[k]; }).length;
+      el.textContent = n ? (I18N.t('Выбрано') + ': ' + n) : I18N.t('Никто не выбран');
+    },
+    clubGroupChosenIds() {
+      return Object.keys(UI._groupChosen).filter(function (k) { return UI._groupChosen[k]; });
     },
     renderClubGroupDetail(group) {
       if (!group) return;
@@ -8920,12 +9060,16 @@
     },
     /** Тип занятия: персональное или группа клуба */
     pickClassKind() {
+      /* Без пояснений: что такое «Персональное» и «Группа клуба»,
+         понятно из самих слов, а подписи только загромождали список.
+         Подсказка про пару и мини-группу осталась под полем в форме —
+         там она к месту. */
       UI.pick({
         title: 'Тип занятия',
         value: UI.classKind(),
         options: [
-          { value: 'personal', label: I18N.t('Персональное'), note: I18N.t('Один клиент, пара или мини-группа') },
-          { value: 'club', label: I18N.t('Группа клуба'), note: I18N.t('Группа из раздела «Клуб»') }
+          { value: 'personal', label: I18N.t('Персональное') },
+          { value: 'club', label: I18N.t('Группа клуба') }
         ]
       }).then(function (kind) {
         if (!kind) return;
@@ -9145,10 +9289,11 @@
     saveClubGroup(e) {
       e.preventDefault();
       var id = UI.$('clubGroupId').value;
-      var memberIds = [];
-      document.querySelectorAll('#clubGroupMemberSelect input[type=checkbox]:checked').forEach(function (cb) {
-        memberIds.push(cb.value);
-      });
+      /* Берём отмеченных из состояния, а не из чекбоксов на экране.
+         Со списком есть поиск: отфильтрованные строки в DOM не
+         существуют, и запрос по :checked молча терял бы всех, кто не
+         попал в текущую выдачу. */
+      var memberIds = UI.clubGroupChosenIds();
       var payload = {
         name: UI.$('clubGroupName').value,
         fee: UI.$('clubGroupFee').value,
@@ -9871,6 +10016,30 @@
         UI.closePick(op ? op.value : null);
       });
     }
+    /* —— Список участников при формировании группы ——
+       Устроен так же, как окно выбора клиентов: отметки живут в
+       состоянии, поиск лишь фильтрует показ. */
+    (function wireGroupMembers() {
+      var box = UI.$('clubGroupMemberSelect');
+      var search = UI.$('clubGroupMemberSearch');
+      var clear = UI.$('clubGroupMemberClear');
+      if (!box) return;
+      box.addEventListener('change', function (e) {
+        var cb = e.target;
+        if (!cb || cb.type !== 'checkbox') return;
+        if (cb.checked) UI._groupChosen[cb.value] = true;
+        else delete UI._groupChosen[cb.value];
+        UI.updateClubGroupMemberCount();
+      });
+      if (search) search.addEventListener('input', function () {
+        UI.renderClubGroupMemberSelect(search.value);
+      });
+      if (clear) clear.addEventListener('click', function () {
+        UI._groupChosen = {};
+        UI.renderClubGroupMemberSelect(search ? search.value : '');
+      });
+    })();
+
     var pickOverlay = UI.$('pickSheet');
     if (pickOverlay) {
       pickOverlay.addEventListener('click', function (e) {
