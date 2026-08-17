@@ -12,6 +12,52 @@
   <title>Танцевальный тренер</title>
   <!--
     ============================================================
+    ТЕМА ДО ПЕРВОГО КАДРА
+    ============================================================
+    Скрипт стоит здесь намеренно: до <style> и до <body>. Он
+    блокирующий, и это его работа — браузер обязан выполнить его
+    прежде, чем нарисует хоть один пиксель.
+
+    Раньше тема ставилась в enterApp(), то есть после разбора всех
+    ~490 КБ скрипта и после DOMContentLoaded. До этого момента
+    страница жила со светлым :root, и человек с тёмной темой видел
+    белую вспышку, а потом перекраску.
+
+    Читаем отдельный маленький ключ, а не общий блок данных
+    пользователя: там JSON со всеми клиентами и занятиями, и его
+    разбор в блокирующем режиме стоил бы дороже самой вспышки.
+    Ключ пишется при каждом applyTheme() (см. UI.applyTheme).
+    ============================================================
+  -->
+  <script>
+    (function preboot() {
+      var BG = { light: '#fdf2f4', dark: '#1c1917', black: '#000000' };
+      var theme = 'light', primary = '';
+      try {
+        var raw = localStorage.getItem('dance_trainer_theme_v1');
+        if (raw) {
+          var t = JSON.parse(raw);
+          if (t && BG[t.theme]) theme = t.theme;
+          if (t && typeof t.primary === 'string') primary = t.primary;
+          if (t && t.calStyle) {
+            document.documentElement.setAttribute('data-cal-style', t.calStyle);
+          }
+        }
+      } catch (e) { /* приватный режим или битый ключ — остаёмся светлыми */ }
+      var el = document.documentElement;
+      el.setAttribute('data-theme', theme);
+      el.style.backgroundColor = BG[theme];
+      el.style.colorScheme = theme === 'light' ? 'light' : 'dark';
+      if (primary) {
+        el.style.setProperty('--primary', primary);
+      }
+      /* Заставка тоже красится под тему: чёрный прямоугольник поверх
+         светлого приложения — та же вспышка, только наоборот. */
+      window.__dtBootTheme = theme;
+    })();
+  </script>
+  <!--
+    ============================================================
     АРХИТЕКТУРА ПРИЛОЖЕНИЯ (для разработчиков)
     ============================================================
 
@@ -577,9 +623,41 @@
       letter-spacing: 0.02em;
     }
     .group-detail-total {
-      position: sticky; bottom: 0; background: var(--card);
-      border-top: 1px solid var(--border); padding: 12px 0 4px;
-      display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between;
+      display: flex; flex-wrap: wrap; gap: 8px;
+      align-items: center; justify-content: space-between;
+    }
+
+    /* —— Окно с неподвижным подвалом ——
+       .modal сама по себе один свиток. Здесь она становится колонкой:
+       шапка и подвал стоят, крутится только .modal-body. Так итоговая
+       строка и кнопки всегда на экране, сколько бы ни было участников.
+
+       dvh — «динамическая» высота: на телефоне она учитывает панель
+       браузера, которая появляется и прячется при прокрутке. Строка с
+       vh оставлена ниже как запасная для старых движков: кто не знает
+       dvh, тот применит её и не заметит следующую. */
+    .modal.modal-flex {
+      display: flex; flex-direction: column;
+      overflow: hidden;
+      max-height: calc(92vh - var(--sat));
+      max-height: calc(92dvh - var(--sat));
+      padding-bottom: 0;
+    }
+    .modal.modal-flex > .modal-header { flex: 0 0 auto; margin-bottom: 12px; }
+    .modal.modal-flex > .modal-body {
+      flex: 1 1 auto;
+      /* без min-height:0 флекс-элемент не даёт себя сжать ниже
+         содержимого, и прокрутка уезжает наружу вместе с подвалом */
+      min-height: 0;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+    }
+    .modal.modal-flex > .modal-foot {
+      flex: 0 0 auto;
+      background: var(--card);
+      border-top: 1px solid var(--border);
+      padding: 12px 0 calc(16px + var(--sab));
     }
 
     /* Duration chips */
@@ -592,11 +670,18 @@
     .chip.active {
       background: var(--primary); color: white; border-color: var(--primary);
     }
-    .chip-custom {
-      width: 72px; padding: 8px 10px; border-radius: 999px; border: 1px solid var(--border);
+    /* Вес селектора здесь не украшение, а лечение. Выше по файлу стоит
+       `.form-group input { width: 100% }` — селектор с типом элемента
+       тяжелее селектора с одним классом, поэтому width:72px проигрывал,
+       поле «своя» распирало ряд на всю ширину и выдавливало себя на
+       отдельную строку под «120 мин». */
+    .chip-row .chip-custom {
+      width: 76px; flex: 0 0 auto; padding: 8px 10px; border-radius: 999px;
+      border: 1px solid var(--border);
       font-size: 0.8125rem; text-align: center; background: var(--card); color: var(--text);
       font-family: inherit;
     }
+    .chip-row .chip-custom.active { border-color: var(--primary); color: var(--primary); font-weight: 600; }
 
     .client-avatar {
       width: 40px; height: 40px; border-radius: 50%;
@@ -1150,6 +1235,39 @@
     .collapse-toggle:active { background: var(--bg); }
     .collapse-caret { color: var(--text-muted); transition: transform 0.15s; flex: 0 0 auto; }
     .collapse-caret.open { transform: rotate(180deg); }
+
+    /* Поле, которое открывает окно выбора. Выглядит как обычное поле
+       ввода, ведёт себя как кнопка. Системный <select> здесь не годится:
+       он рисуется окном ОС — чужой шрифт, чужая тема, на тёмной теме
+       белый список. */
+    .field-btn {
+      width: 100%; display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; padding: 12px 14px; border: 1px solid var(--border);
+      border-radius: 12px; background: var(--card); color: var(--text);
+      font-family: inherit; font-size: 0.9375rem; font-weight: 400; cursor: pointer;
+      text-align: left; letter-spacing: -0.01em;
+    }
+    .field-btn:active { background: var(--bg); }
+    .field-btn > span:first-child {
+      flex: 1; min-width: 0; overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap;
+    }
+    .field-btn.is-empty > span:first-child { color: var(--text-muted); }
+    .field-btn-caret { color: var(--text-muted); font-size: 0.75rem; flex: 0 0 auto; }
+
+    /* Окно множественного выбора с поиском. Клиентов у тренера
+       под сотню — разворачивающийся список внутри формы для такого
+       объёма непригоден: он либо коротенький и в нём не найти, либо
+       выдавливает всю форму вниз. */
+    #multiPickSheet { z-index: 700; }
+    .multi-pick-search { margin-bottom: 10px; }
+    .multi-pick-list {
+      flex: 1 1 auto; min-height: 0; overflow-y: auto;
+      -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+      margin: 0 -4px; padding: 0 4px;
+    }
+    .multi-pick-empty { padding: 24px 12px; text-align: center; color: var(--text-muted); font-size: 0.85rem; }
+    .multi-pick-count { font-size: 0.8rem; color: var(--text-muted); }
 
     .client-select-list {
       max-height: 220px; overflow-y: auto; border: 1px solid var(--border);
@@ -1999,20 +2117,44 @@
             <input type="number" class="chip-custom" id="durationCustom" min="5" max="300" placeholder="своя" inputmode="numeric">
           </div>
         </div>
+        <!--
+          Тип занятия развязывает два разных мира. Раньше «Группа клуба»
+          и «Клиенты» висели в форме одновременно, и окно приходилось
+          читать целиком, чтобы понять, что вообще создаёшь. Теперь
+          выбираешь тип — и видишь только то, что к нему относится.
+
+          В данных отдельного поля «тип» нет: клубное занятие — это
+          занятие с clubGroupId. Так старые записи открываются без
+          миграции, и флаг не может разойтись с содержимым.
+        -->
         <div class="form-group">
-          <label>Группа клуба</label>
-          <select id="classClubGroup">
-            <option value="">— не выбрана —</option>
-          </select>
+          <label>Тип занятия</label>
+          <button type="button" class="field-btn" data-action="pick-class-kind">
+            <span id="classKindLabel">Персональное</span>
+            <span class="field-btn-caret">▾</span>
+          </button>
+          <input type="hidden" id="classKind" value="personal">
+        </div>
+
+        <!-- Ветка «Группа клуба» -->
+        <div class="form-group hidden" data-kind-block="club">
+          <label>Группа</label>
+          <button type="button" class="field-btn" data-action="pick-club-group">
+            <span id="classClubGroupLabel">— не выбрана —</span>
+            <span class="field-btn-caret">▾</span>
+          </button>
+          <input type="hidden" id="classClubGroup" value="">
           <p class="text-sm text-muted" style="margin-top:6px;font-size:0.72rem;">Группа из раздела «Клуб» — в расписании синим, без оплаты за занятие</p>
         </div>
-        <div class="form-group">
-          <label>Клиенты (разовые)</label>
-          <button type="button" class="collapse-toggle" data-action="toggle-client-select">
+
+        <!-- Ветка «Персональное»: один клиент, пара или мини-группа -->
+        <div class="form-group" data-kind-block="personal">
+          <label>Клиенты</label>
+          <button type="button" class="field-btn" data-action="pick-class-clients">
             <span id="clientSelectSummary">Никто не выбран</span>
-            <span class="collapse-caret" id="clientSelectCaret">▾</span>
+            <span class="field-btn-caret">▾</span>
           </button>
-          <div class="client-select-list hidden" id="classClientSelect"></div>
+          <p class="text-sm text-muted" style="margin-top:6px;font-size:0.72rem;">Можно выбрать нескольких — парное занятие или мини-группа</p>
         </div>
         <div class="form-group"><label>Комментарий</label><textarea id="classNotes" rows="2" placeholder="Зал, тема…"></textarea></div>
         <div class="form-group" style="margin-bottom:12px;">
@@ -2095,16 +2237,28 @@
     </div>
   </div>
 
+  <!--
+    Окно группы собрано колонкой: шапка и подвал не двигаются, крутится
+    только середина. Раньше всё окно было одним свитком, а итоговая
+    плашка держалась на position:sticky. Липкий элемент прилипает к низу
+    СВОЕГО контейнера, а низ окна на телефоне уезжал под видимую границу
+    экрана (96vh считается от большого вьюпорта, а подложка — от
+    текущего). Итог: плашка вставала посреди списка, накрывая участников,
+    а кнопок внизу вообще не было видно.
+  -->
   <div class="modal-overlay" id="clubGroupDetailModal">
-    <div class="modal" style="max-height:96vh;">
+    <div class="modal modal-flex">
       <div class="modal-header">
         <div class="modal-title" id="clubGroupDetailTitle">Группа</div>
         <button type="button" class="modal-close" data-close="clubGroupDetailModal">×</button>
       </div>
-      <div id="clubGroupDetailContent"></div>
-      <div class="flex gap-2 mt-3">
-        <button type="button" class="btn btn-secondary btn-block" data-action="club-group-edit-current">✏️ Изменить</button>
-        <button type="button" class="btn btn-primary btn-block" data-close="clubGroupDetailModal">Готово</button>
+      <div class="modal-body" id="clubGroupDetailContent"></div>
+      <div class="modal-foot">
+        <div id="clubGroupDetailTotal"></div>
+        <div class="flex gap-2 mt-2">
+          <button type="button" class="btn btn-secondary btn-block" data-action="club-group-edit-current">✏️ Изменить</button>
+          <button type="button" class="btn btn-primary btn-block" data-close="clubGroupDetailModal">Готово</button>
+        </div>
       </div>
     </div>
   </div>
@@ -2211,6 +2365,32 @@
     </div>
   </div>
 
+  <!--
+    Множественный выбор с поиском. Собран той же колонкой, что и окно
+    группы: поиск и подвал стоят, крутится только список. Иначе строка
+    поиска уезжает вверх, стоит начать листать, — а искать без неё
+    незачем.
+  -->
+  <div class="modal-overlay" id="multiPickSheet">
+    <div class="modal modal-flex">
+      <div class="modal-header">
+        <div class="modal-title" id="multiPickTitle">Выбор</div>
+        <button type="button" class="modal-close" data-close="multiPickSheet">×</button>
+      </div>
+      <div class="form-group multi-pick-search" style="margin-bottom:10px;">
+        <input type="text" id="multiPickSearch" placeholder="Поиск по имени или телефону" autocomplete="off">
+      </div>
+      <div class="multi-pick-list modal-body" id="multiPickList" data-no-i18n></div>
+      <div class="modal-foot">
+        <div class="flex justify-between items-center mb-2">
+          <span class="multi-pick-count" id="multiPickCount">Никто не выбран</span>
+          <button type="button" class="link-btn" id="multiPickClear">Снять все</button>
+        </div>
+        <button type="button" class="btn btn-primary btn-block" id="multiPickDone">Готово</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="ccSheet">
     <div class="modal">
       <div class="modal-header">
@@ -2251,7 +2431,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-15 · 50',
+    BUILD: '2026-08-17 · 51',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -2725,6 +2905,25 @@
     'Комментарий': 'Comment',
     'Клиенты (разовые)': 'Clients (drop-in)',
     'Никто не выбран': 'Nobody selected',
+    'и ещё': 'and',
+    'Тип занятия': 'Class type',
+    'Персональное': 'Personal',
+    'Персональное занятие': 'Personal class',
+    'Один клиент, пара или мини-группа': 'One client, a pair or a small group',
+    'Группа из раздела «Клуб»': 'A group from the Club section',
+    'Выбрано': 'Selected',
+    'Снять все': 'Clear all',
+    'Выберите клиентов': 'Choose clients',
+    'Выберите группу': 'Choose a group',
+    'Поиск по имени или телефону': 'Search by name or phone',
+    'Ничего не нашлось': 'Nothing found',
+    'Сначала добавьте клиентов в разделе «Клиенты»': 'Add clients in the Clients section first',
+    'Сначала сформируйте группу в разделе «Клуб»': 'Create a group in the Club section first',
+    'Можно выбрать нескольких — парное занятие или мини-группа': 'You can pick several — a pair or a small group',
+    'Группа из раздела «Клуб» — в расписании синим, без оплаты за занятие': 'A group from the Club section — shown blue, no per-class payment',
+    '— не выбрана —': '— not selected —',
+    'Выберите группу клуба': 'Choose a club group',
+    'Участники группы': 'Group members',
     'Списывать абонемент': 'Use class pass',
     'Годится и для группы, и для индивидуального. Если включено — у участников с действующим абонементом списывается 1 занятие и ставится «Оплатил».':
       'Works for both group and one-to-one classes. When on, attendees with an active pass have one class deducted and are marked as paid.',
@@ -4965,6 +5164,18 @@
     },
     deleteClient(id) {
       State.clients = State.clients.filter(function (c) { return c.id !== id; });
+      /* Ссылки на удалённого клиента надо убирать из занятий, иначе они
+         остаются висеть навсегда. На экране это незаметно — рендер
+         отфильтровывает пропавших через filter(Boolean), — но в данных
+         копится мусор: занятие «на троих», в котором на деле никого,
+         отметки об оплате несуществующих людей, и счётчик «✓ 2/3»,
+         который никогда не станет полным.
+         Рядом deleteClubMember так и делает — здесь просто забыли. */
+      State.classes.forEach(function (cls) {
+        if (!cls.clientIds || cls.clientIds.indexOf(id) < 0) return;
+        cls.clientIds = cls.clientIds.filter(function (cid) { return cid !== id; });
+        if (cls.payments) delete cls.payments[id];
+      });
       State.persist();
     },
     /** Добавить/пополнить абонемент: 4, 6 или 8 занятий */
@@ -5547,6 +5758,44 @@
       try { Storage.saveKey(Services.snapshotKey(), null); } catch (e) {}
       return true;
     },
+    /**
+     * Развести старые занятия, где стояли и группа клуба, и разовые
+     * клиенты сразу. Такая запись была возможна до разделения формы на
+     * типы и теперь противоречива: занятие клубное, а в нём висят люди,
+     * которых клубный экран не показывает и за которых никто не платит.
+     *
+     * Молча стереть их нельзя — это была бы ровно та тихая потеря
+     * данных, которая всплывает через месяц. Поэтому имена уходят в
+     * комментарий: место, куда тренер и так пишет, кто был на занятии.
+     *
+     * @returns {number} сколько занятий пришлось поправить
+     */
+    migrateClubClassClients() {
+      var fixed = 0;
+      State.classes.forEach(function (cls) {
+        if (!cls.clubGroupId) return;
+        if (!cls.clientIds || !cls.clientIds.length) return;
+        var names = cls.clientIds.map(function (id) {
+          var c = State.clientById(id);
+          return c ? c.name : null;
+        }).filter(Boolean);
+        if (names.length) {
+          var line = 'Были отмечены: ' + names.join(', ');
+          cls.notes = cls.notes ? (cls.notes + '\n' + line) : line;
+        }
+        cls.clientIds = [];
+        if (cls.payments) {
+          // Оплаты этих людей относились к занятию, которого больше нет
+          cls.payments = {};
+        }
+        fixed++;
+      });
+      if (fixed) {
+        State.persist();
+        console.warn('[migrate] клубных занятий с разовыми клиентами:', fixed);
+      }
+      return fixed;
+    },
     /** Как занятие называется на экране: своё имя, группа клуба или имена участников */
     classDisplayTitle(cls) {
       if (!cls) return 'Занятие';
@@ -6117,7 +6366,6 @@
     },
     clubOverallStatsForMonth(key) {
       var paid = 0, count = 0, collected = 0, totalMoney = 0, groups = 0;
-      var memberIds = {};
       State.clubGroups.forEach(function (g) {
         var rec = Services.ensureClubMonth(g, key);
         if (!rec) return;
@@ -6127,11 +6375,16 @@
         count += st.count;
         collected += st.collected;
         totalMoney += st.totalMoney;
-        rec.memberIds.forEach(function (id) { memberIds[id] = true; });
       });
       return {
         groups: groups,
-        members: Object.keys(memberIds).length,
+        /* «Членов клуба» — это все, кто занесён в базу, а не только
+           расставленные по группам. Здесь раньше складывались memberIds
+           из месячных записей групп, и без единой группы плитка честно
+           показывала ноль при полном списке людей на экране ниже.
+           Человек может месяц болеть и не попасть ни в одну группу —
+           членом клуба он от этого быть не перестал. */
+        members: State.clubMembers.length,
         paid: paid, count: count,
         collected: collected, totalMoney: totalMoney
       };
@@ -6340,6 +6593,77 @@
       this.closeModal('pickSheet');
       var done = UI._pickResolve;
       UI._pickResolve = null;
+      if (done) done(value === undefined ? null : value);
+    },
+    /* —— Множественный выбор с поиском ——
+       Список клиентов у тренера растёт бесконечно, а внутри формы для
+       него места нет. Отдельное окно: ищешь, отмечаешь, подтверждаешь.
+       Возвращает Promise с массивом id или null, если закрыли крестиком
+       (null и пустой массив — разные вещи: «передумал» против «снял
+       всех»). */
+    _multiResolve: null,
+    _multiItems: [],
+    _multiChosen: {},
+    pickMany(opts) {
+      var o = opts || {};
+      var sheet = this.$('multiPickSheet');
+      if (!sheet) return Promise.resolve(null);
+      if (UI._multiResolve) { var stale = UI._multiResolve; UI._multiResolve = null; stale(null); }
+
+      this.$('multiPickTitle').textContent = I18N.t(o.title || 'Выбор');
+      var search = this.$('multiPickSearch');
+      if (search) {
+        search.value = '';
+        search.placeholder = I18N.t(o.placeholder || 'Поиск по имени или телефону');
+      }
+      UI._multiItems = o.items || [];
+      UI._multiChosen = {};
+      (o.value || []).forEach(function (id) { UI._multiChosen[id] = true; });
+      UI._multiEmptyText = o.emptyText || 'Ничего не нашлось';
+      this.renderMultiPick('');
+
+      /* Курсор в поиск специально не ставим: на телефоне это дёргает
+         экран сменой клавиатуры ровно в момент появления окна. */
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+      this.openModal('multiPickSheet');
+
+      return new Promise(function (resolve) { UI._multiResolve = resolve; });
+    },
+    renderMultiPick(query) {
+      var box = this.$('multiPickList');
+      if (!box) return;
+      var q = (query || '').trim().toLowerCase();
+      var rows = UI._multiItems.filter(function (it) {
+        if (!q) return true;
+        var hay = (it.label + ' ' + (it.note || '') + ' ' + (it.search || '')).toLowerCase();
+        return hay.indexOf(q) !== -1;
+      });
+      if (!rows.length) {
+        box.innerHTML = '<div class="multi-pick-empty">' +
+          Domain.escapeHtml(I18N.t(q ? 'Ничего не нашлось' : UI._multiEmptyText)) + '</div>';
+      } else {
+        box.innerHTML = rows.map(function (it) {
+          return '<label class="client-select-item">' +
+            '<input type="checkbox" value="' + Domain.escapeHtml(it.value) + '"' +
+              (UI._multiChosen[it.value] ? ' checked' : '') + '>' +
+            '<span class="client-select-meta">' +
+              '<span class="client-select-name">' + Domain.escapeHtml(it.label) + (it.badge || '') + '</span>' +
+              (it.note ? '<span class="client-select-phone">' + Domain.escapeHtml(it.note) + '</span>' : '') +
+            '</span></label>';
+        }).join('');
+      }
+      this.updateMultiPickCount();
+    },
+    updateMultiPickCount() {
+      var el = this.$('multiPickCount');
+      if (!el) return;
+      var n = Object.keys(UI._multiChosen).filter(function (k) { return UI._multiChosen[k]; }).length;
+      el.textContent = n ? (I18N.t('Выбрано') + ': ' + n) : I18N.t('Никто не выбран');
+    },
+    closeMultiPick(value) {
+      this.closeModal('multiPickSheet');
+      var done = UI._multiResolve;
+      UI._multiResolve = null;
       if (done) done(value === undefined ? null : value);
     },
     /** Список месяцев для выбора — общий у денег и клуба */
@@ -6625,6 +6949,20 @@
       }
       var meta = document.querySelector('meta[name="theme-color"]');
       if (meta) meta.content = s.primary;
+
+      /* Зеркало темы для скрипта в <head>, который красит страницу до
+         первого кадра. Отдельный маленький ключ, а не общие данные:
+         на старте его читают и разбирают блокирующе, и он обязан быть
+         дешёвым. Ключ общий для всех аккаунтов на устройстве — тема
+         это оформление телефона, а не собственность профиля. */
+      try {
+        localStorage.setItem('dance_trainer_theme_v1', JSON.stringify({
+          theme: themeName,
+          primary: s.primary || '#e11d48',
+          calStyle: calStyle
+        }));
+      } catch (e) { /* приватный режим — просто останемся без ускорения */ }
+
       this.$('appTitle').textContent = s.calendarName ? '💃 ' + s.calendarName : '💃 Танцевальный тренер';
       var uname = (State.currentUser && State.currentUser.name) || s.profileName || '';
       var ulogin = (State.currentUser && State.currentUser.login) || s.profilePhone || '';
@@ -7038,7 +7376,6 @@
       this.$('classTitle').value = '';
       var groupCb = this.$('classIsGroup');
       if (groupCb) { groupCb.checked = false; groupCb.dataset.userTouched = ''; }
-      this.fillClassClubGroupSelect(cls && cls.clubGroupId ? cls.clubGroupId : '');
       if (cls) {
         this.$('classModalTitle').textContent = 'Редактировать';
         this.$('classId').value = cls.id;
@@ -7049,50 +7386,66 @@
         this.$('classNotes').value = cls.notes || '';
         this.$('btnDeleteClass').classList.remove('hidden');
         if (groupCb) groupCb.checked = Domain.isGroupClass(cls);
-        this.renderClassClientSelect(cls.clientIds || []);
+        /* Тип не хранится в записи — он и есть наличие группы клуба.
+           Одна правда вместо двух, которые могут разойтись. */
+        this.setClassKind(cls.clubGroupId ? 'club' : 'personal');
+        this.setClassClubGroup(cls.clubGroupId || '');
+        this.setClassClients(cls.clientIds || []);
       } else {
         this.$('classModalTitle').textContent = 'Новое занятие';
-        this.renderClassClientSelect([]);
+        this.setClassKind('personal');
+        this.setClassClubGroup('');
+        this.setClassClients([]);
       }
     },
-    fillClassClubGroupSelect(selectedId) {
-      var sel = this.$('classClubGroup');
-      if (!sel) return;
-      var html = '<option value="">— не выбрана —</option>';
-      var groups = State.clubGroups.slice().sort(function (a, b) { return a.name.localeCompare(b.name, I18N.collate()); });
-      groups.forEach(function (g) {
-        html += '<option value="' + g.id + '"' + (selectedId === g.id ? ' selected' : '') + '>' +
-          Domain.escapeHtml(g.name) + ' (' + ((g.memberIds && g.memberIds.length) || 0) + ' чел.)</option>';
+    /**
+     * Переключить тип занятия: 'personal' | 'club'.
+     * Показывает свою ветку и прячет чужую. Выбор чужой ветки НЕ трёт:
+     * человек может ткнуть не туда и вернуться, потеряв отмеченных
+     * клиентов — это раздражает сильнее, чем лишнее поле в памяти.
+     * Обнуление происходит один раз, при сохранении.
+     */
+    setClassKind(kind) {
+      kind = kind === 'club' ? 'club' : 'personal';
+      var hidden = this.$('classKind');
+      if (hidden) hidden.value = kind;
+      var label = this.$('classKindLabel');
+      if (label) label.textContent = I18N.t(kind === 'club' ? 'Группа клуба' : 'Персональное');
+      document.querySelectorAll('[data-kind-block]').forEach(function (el) {
+        el.classList.toggle('hidden', el.dataset.kindBlock !== kind);
       });
-      sel.innerHTML = html;
-      sel.onchange = function () {
-        var gid = sel.value;
-        if (!gid) return;
-        var g = State.clubGroupById(gid);
-        if (!g) return;
-        var titleEl = UI.$('classTitle');
-        if (titleEl && !titleEl.value.trim()) titleEl.value = g.name;
-      };
+      /* Подпись у цены зависит от ветки: у клубной группы «с человека»
+         бессмысленно — там взносы, а не оплата за занятие. */
+      this.updatePriceLabel();
     },
-    renderClassClientSelect(selectedIds) {
-      var box = this.$('classClientSelect');
-      if (!State.clients.length) {
-        box.innerHTML = '<div class="text-sm text-muted" style="padding:12px">Сначала добавьте клиентов</div>';
-        return;
+    classKind() {
+      var el = this.$('classKind');
+      return el && el.value === 'club' ? 'club' : 'personal';
+    },
+    setClassClubGroup(groupId) {
+      var hidden = this.$('classClubGroup');
+      var label = this.$('classClubGroupLabel');
+      var btn = label && label.closest('.field-btn');
+      var g = groupId ? State.clubGroupById(groupId) : null;
+      if (hidden) hidden.value = g ? g.id : '';
+      if (label) {
+        label.textContent = g
+          ? g.name + ' · ' + ((g.memberIds && g.memberIds.length) || 0) + ' ' +
+            UI.plural((g.memberIds && g.memberIds.length) || 0, 'участник', 'участника', 'участников')
+          : I18N.t('— не выбрана —');
       }
-      var sorted = State.clients.slice().sort(function (a, b) { return a.name.localeCompare(b.name, I18N.collate()); });
-      box.dataset.rendered = '1';
-      box.innerHTML = sorted.map(function (c) {
-        var ab = UI.tpl.abonementBadge(c.abonement);
-        return '<label class="client-select-item">' +
-          '<input type="checkbox" value="' + c.id + '" ' + (selectedIds.indexOf(c.id) >= 0 ? 'checked' : '') + '>' +
-          '<span class="client-select-meta">' +
-            '<span class="client-select-name">' + Domain.escapeHtml(c.name) + ab + '</span>' +
-            (c.phone ? '<span class="client-select-phone">' + Domain.escapeHtml(c.phone) + '</span>' : '') +
-          '</span></label>';
-      }).join('');
-      box.onchange = function () { UI.updateClientSelectSummary(); };
+      if (btn) btn.classList.toggle('is-empty', !g);
+      // Название подставляем от группы, если человек своё не вписал
+      var titleEl = this.$('classTitle');
+      if (g && titleEl && !titleEl.value.trim()) titleEl.value = g.name;
+    },
+    /** Выбранные клиенты живут в самом окне: массив id, без скрытых чекбоксов. */
+    setClassClients(ids) {
+      this._classClientIds = (ids || []).filter(function (id) { return !!State.clientById(id); });
       this.updateClientSelectSummary();
+    },
+    classClients() {
+      return (this._classClientIds || []).slice();
     },
     /** Подпись поля цены зависит от того, групповое занятие или нет */
     updatePriceLabel() {
@@ -7106,19 +7459,20 @@
           : 'Сумма за занятие целиком, сколько бы человек в нём ни было.';
       }
     },
-    /** Подпись на свёрнутом списке: кого выбрали */
+    /** Подпись на кнопке выбора клиентов: кого выбрали */
     updateClientSelectSummary() {
       var el = this.$('clientSelectSummary');
       if (!el) return;
-      var checked = Array.from(document.querySelectorAll('#classClientSelect input:checked'));
-      if (!checked.length) { el.textContent = 'Никто не выбран'; return; }
-      var names = checked.map(function (cb) {
-        var c = State.clientById(cb.value);
+      var btn = el.closest('.field-btn');
+      var names = this.classClients().map(function (id) {
+        var c = State.clientById(id);
         return c ? c.name : '';
       }).filter(Boolean);
+      if (btn) btn.classList.toggle('is-empty', !names.length);
+      if (!names.length) { el.textContent = I18N.t('Никто не выбран'); return; }
       var head = names.slice(0, 2).join(', ');
       el.textContent = names.length > 2
-        ? head + ' и ещё ' + (names.length - 2)
+        ? head + ' ' + I18N.t('и ещё') + ' ' + (names.length - 2)
         : head;
     },
     /** Выбранный месяц в разделе «Клиенты» */
@@ -7308,7 +7662,36 @@
         (cls.title ? '<div style="font-size:1.15rem;font-weight:700;margin-top:4px;">' + Domain.escapeHtml(cls.title) + '</div>' : '') +
         '<div style="font-size:1.15rem;font-weight:600;color:var(--primary);margin-top:4px;">' + Domain.formatTimeRange(cls.time, cls.duration || 60) + '</div>' +
         (cls.notes ? '<div class="text-sm mt-2">📝 ' + Domain.escapeHtml(cls.notes) + '</div>' : '') +
-        '</div><div class="flex justify-between items-center mb-2"><div style="font-weight:600;">Клиенты и оплата</div>' +
+        '</div>';
+
+      /* Клубное занятие деньгами за занятие не заведует — там взносы,
+         и платят их в разделе «Клуб», за месяц целиком. Раньше здесь
+         всё равно рисовалось «Клиенты и оплата 0 / 0» и «Нет клиентов»:
+         человек видел пустоту и решал, что состав потерялся. Показываем
+         состав группы — читать, а не отмечать. */
+      if (cls.clubGroupId) {
+        var g = State.clubGroupById(cls.clubGroupId);
+        var roster = g ? Services.clubMonthMembers(g, (cls.date || '').slice(0, 7) || Domain.currentMonthKey()) : [];
+        html += '<div class="flex justify-between items-center mb-2">' +
+          '<div style="font-weight:600;">' + I18N.t('Участники группы') + '</div>' +
+          '<div class="text-sm text-muted">' + roster.length + '</div></div>';
+        if (!g) {
+          html += '<div class="empty" style="padding:20px;">Группа удалена — откройте «Изменить» и выберите другую</div>';
+        } else if (!roster.length) {
+          html += '<div class="empty" style="padding:20px;">В группе пока нет участников</div>';
+        } else {
+          html += '<div class="card" style="padding:4px 8px;">' + roster.map(function (m) {
+            return '<div class="client-select-item"><span class="client-select-meta">' +
+              '<span class="client-select-name">' + Domain.escapeHtml(m.name) + '</span>' +
+              (m.phone ? '<span class="client-select-phone">' + Domain.escapeHtml(m.phone) + '</span>' : '') +
+              '</span></div>';
+          }).join('') + '</div>';
+        }
+        this.$('classDetailContent').innerHTML = html;
+        return;
+      }
+
+      html += '<div class="flex justify-between items-center mb-2"><div style="font-weight:600;">Клиенты и оплата</div>' +
         '<div class="text-sm text-muted">' + paidCount + ' / ' + clients.length + '</div></div>';
       if (!clients.length) {
         html += '<div class="empty" style="padding:20px;">Нет клиентов</div>';
@@ -7499,12 +7882,16 @@
         }).join('');
       }
 
-      html += '<div class="group-detail-total">' +
-        '<div style="font-weight:600;">' + st.paid + ' / ' + st.count + ' оплатили</div>' +
-        '<span class="club-money-bubble ' + bcls + '">' + this.formatMoney(st.collected) + ' из ' + this.formatMoney(st.totalMoney) + '</span>' +
-        '</div>';
-
       this.$('clubGroupDetailContent').innerHTML = html;
+      /* Итог живёт в подвале окна, вне прокрутки: он нужен глазу
+         постоянно, а не в тот момент, когда домотаешь до конца списка. */
+      var totalEl = this.$('clubGroupDetailTotal');
+      if (totalEl) {
+        totalEl.innerHTML = '<div class="group-detail-total">' +
+          '<div style="font-weight:600;">' + st.paid + ' / ' + st.count + ' оплатили</div>' +
+          '<span class="club-money-bubble ' + bcls + '">' + this.formatMoney(st.collected) + ' из ' + this.formatMoney(st.totalMoney) + '</span>' +
+          '</div>';
+      }
       this.lockMoneyBubbles();
     }
   };
@@ -7776,16 +8163,9 @@
         case 'client-create': Controllers.openClientModal(null); break;
         case 'client-open': Controllers.openClientModal(el.dataset.id); break;
         case 'client-delete': Controllers.deleteClient(); break;
-        case 'toggle-client-select': {
-          var listEl = UI.$('classClientSelect');
-          var caret = UI.$('clientSelectCaret');
-          if (listEl) {
-            var willOpen = listEl.classList.contains('hidden');
-            listEl.classList.toggle('hidden', !willOpen);
-            if (caret) caret.classList.toggle('open', willOpen);
-          }
-          break;
-        }
+        case 'pick-class-kind': Controllers.pickClassKind(); break;
+        case 'pick-club-group': Controllers.pickClubGroupForClass(); break;
+        case 'pick-class-clients': Controllers.pickClientsForClass(); break;
         case 'abon-add': {
           var cid = UI.$('clientId').value;
           if (!cid) { UI.showToast('Сначала сохраните клиента'); break; }
@@ -8536,27 +8916,101 @@
       // Пустое поле у нового занятия — цену вводим каждый раз свою
       if (priceEl) priceEl.value = cls ? (Services.classPrice(cls) || '') : '';
       UI.updatePriceLabel();
-      // Список клиентов всегда открываем свёрнутым — форма и так длинная
-      var listEl = UI.$('classClientSelect');
-      var caret = UI.$('clientSelectCaret');
-      if (listEl) listEl.classList.add('hidden');
-      if (caret) caret.classList.remove('open');
-      UI.updateClientSelectSummary();
       UI.openModal('classModal');
+    },
+    /** Тип занятия: персональное или группа клуба */
+    pickClassKind() {
+      UI.pick({
+        title: 'Тип занятия',
+        value: UI.classKind(),
+        options: [
+          { value: 'personal', label: I18N.t('Персональное'), note: I18N.t('Один клиент, пара или мини-группа') },
+          { value: 'club', label: I18N.t('Группа клуба'), note: I18N.t('Группа из раздела «Клуб»') }
+        ]
+      }).then(function (kind) {
+        if (!kind) return;
+        UI.setClassKind(kind);
+      });
+    },
+    pickClubGroupForClass() {
+      var groups = State.clubGroups.slice().sort(function (a, b) {
+        return a.name.localeCompare(b.name, I18N.collate());
+      });
+      if (!groups.length) {
+        UI.showToast('Сначала сформируйте группу в разделе «Клуб»');
+        return;
+      }
+      UI.pick({
+        title: 'Выберите группу',
+        value: UI.$('classClubGroup') ? UI.$('classClubGroup').value : '',
+        options: groups.map(function (g) {
+          var n = (g.memberIds && g.memberIds.length) || 0;
+          return {
+            value: g.id,
+            label: g.name,
+            note: n + ' ' + UI.plural(n, 'участник', 'участника', 'участников')
+          };
+        })
+      }).then(function (gid) {
+        if (!gid) return;
+        UI.setClassClubGroup(gid);
+      });
+    },
+    pickClientsForClass() {
+      var clients = State.clients.slice().sort(function (a, b) {
+        return a.name.localeCompare(b.name, I18N.collate());
+      });
+      if (!clients.length) {
+        UI.showToast('Сначала добавьте клиентов в разделе «Клиенты»');
+        return;
+      }
+      UI.pickMany({
+        title: 'Выберите клиентов',
+        value: UI.classClients(),
+        emptyText: 'Сначала добавьте клиентов в разделе «Клиенты»',
+        items: clients.map(function (c) {
+          return {
+            value: c.id,
+            label: c.name,
+            note: c.phone || '',
+            badge: UI.tpl.abonementBadge(c.abonement),
+            search: (c.notes || '')
+          };
+        })
+      }).then(function (ids) {
+        if (ids === null) return; // закрыли крестиком — ничего не меняем
+        UI.setClassClients(ids);
+      });
     },
     saveClass(e) {
       e.preventDefault();
       var id = UI.$('classId').value;
       var groupEl = UI.$('classIsGroup');
+      var kind = UI.classKind();
       var clubGroupEl = UI.$('classClubGroup');
-      var clubGroupId = clubGroupEl && clubGroupEl.value ? clubGroupEl.value : null;
+
+      /* Тип занятия — развилка, а не галочка: клубное занятие несёт
+         группу и не несёт разовых клиентов, персональное — наоборот.
+         Обнуляем чужую ветку здесь, в одном месте, а не при каждом
+         переключении: так человек может передумать туда-обратно, ничего
+         не потеряв, а в данные попадает ровно одна непротиворечивая
+         версия. Если руководителю клуба нужно отметить гостя на
+         клубном занятии — для этого есть комментарий. */
+      var clubGroupId = (kind === 'club' && clubGroupEl && clubGroupEl.value) ? clubGroupEl.value : null;
+      var clientIds = kind === 'personal' ? UI.classClients() : [];
+
+      if (kind === 'club' && !clubGroupId) {
+        UI.showToast('Выберите группу клуба');
+        return;
+      }
+
       var data = {
         title: UI.$('classTitle').value,
         date: UI.$('classDate').value,
         time: UI.$('classTime').value,
         duration: parseInt(UI.$('classDuration').value, 10) || 60,
         notes: UI.$('classNotes').value,
-        clientIds: Array.from(document.querySelectorAll('#classClientSelect input:checked')).map(function (cb) { return cb.value; }),
+        clientIds: clientIds,
         isGroup: groupEl ? !!groupEl.checked : false,
         clubGroupId: clubGroupId,
         price: UI.$('classPrice') ? UI.$('classPrice').value : 0
@@ -9356,14 +9810,34 @@
         UI.showToast('Абонемент действует с ' + Domain.formatDisplayDate(abonStart.value));
       });
     }
-    // Заставка уходит, когда приложение готово к работе
+    /* Заставка уходит, когда приложение действительно готово, а не по
+       таймеру. Раньше стояло глухих 700 мс: на быстром телефоне человек
+       ждал зря, на медленном — заставка снималась раньше, чем встала
+       тема, и в щель проскакивал светлый кадр.
+
+       Минимум 400 мс держим специально: заставка, мелькнувшая на два
+       кадра, читается как сбой, а не как запуск. */
     (function hideSplash() {
       var sp = document.getElementById('splash');
       if (!sp) return;
-      setTimeout(function () {
+      var MIN_MS = 400, MAX_MS = 4000;
+      var t0 = Date.now();
+      function done() {
         sp.classList.add('hide');
         setTimeout(function () { if (sp.parentNode) sp.parentNode.removeChild(sp); }, 600);
-      }, 700);
+      }
+      function tick() {
+        var waited = Date.now() - t0;
+        /* Готовность = первый экран отрисован и тема применена.
+           Аварийный потолок на случай, если что-то не поднялось:
+           заставка не должна запирать приложение навсегда. */
+        if ((window.__dtReady && waited >= MIN_MS) || waited >= MAX_MS) {
+          requestAnimationFrame(done);
+          return;
+        }
+        setTimeout(tick, 50);
+      }
+      tick();
     })();
 
     var incomeForm = UI.$('incomeForm');
@@ -9403,6 +9877,42 @@
         if (e.target === pickOverlay) UI.closePick(null);
       });
     }
+
+    /* —— Окно множественного выбора ——
+       Отметки держим в UI._multiChosen, а не в DOM: список фильтруется
+       поиском, и отмеченный человек, уехавший из выдачи, обязан остаться
+       отмеченным. Была бы правда в чекбоксах — он бы молча пропадал. */
+    (function wireMultiPick() {
+      var list = UI.$('multiPickList');
+      var search = UI.$('multiPickSearch');
+      var done = UI.$('multiPickDone');
+      var clear = UI.$('multiPickClear');
+      var overlay = UI.$('multiPickSheet');
+      if (!list || !overlay) return;
+
+      list.addEventListener('change', function (e) {
+        var cb = e.target;
+        if (!cb || cb.type !== 'checkbox') return;
+        if (cb.checked) UI._multiChosen[cb.value] = true;
+        else delete UI._multiChosen[cb.value];
+        UI.updateMultiPickCount();
+      });
+      if (search) search.addEventListener('input', function () { UI.renderMultiPick(search.value); });
+      if (clear) clear.addEventListener('click', function () {
+        UI._multiChosen = {};
+        UI.renderMultiPick(search ? search.value : '');
+      });
+      if (done) done.addEventListener('click', function () {
+        UI.closeMultiPick(Object.keys(UI._multiChosen).filter(function (k) { return UI._multiChosen[k]; }));
+      });
+      /* Мимо окна и крестик — это «передумал»: возвращаем null, и
+         выбор в форме остаётся прежним. */
+      overlay.addEventListener('click', function (e) {
+        if (e.target === overlay) UI.closeMultiPick(null);
+      });
+      var closeBtn = overlay.querySelector('[data-close="multiPickSheet"]');
+      if (closeBtn) closeBtn.addEventListener('click', function () { UI.closeMultiPick(null); });
+    })();
     UI.$('settingCalendarName').addEventListener('change', function () { Controllers.saveSettingsFromForm(); });
     UI.$('settingColor').addEventListener('change', function () { Controllers.saveSettingsFromForm(); });
     UI.$('styleOptions').addEventListener('click', function (e) {
@@ -9506,6 +10016,7 @@
     try { Services.migrateAbonementDates(); } catch (e) { console.error(e); }
       try { Services.cleanupOrphanAbonementSales(); } catch (e) { console.error(e); }
     try { Services.syncAllGroupClasses(); } catch (e) { console.error(e); }
+    try { Services.migrateClubClassClients(); } catch (e) { console.error(e); }
     State.currentWeekStart = Domain.getMonday(new Date());
     State.selectedDate = Domain.formatDate(new Date());
     UI.applyTheme();
@@ -9515,6 +10026,8 @@
     Money.adoptFromSettings();
     Money.fillSelect();
     I18N.retranslate();
+    /* Экран собран и покрашен — заставке больше нечего прикрывать. */
+    window.__dtReady = true;
     Tour.maybeStart();
   }
 
@@ -9571,6 +10084,8 @@
     // подставить сохранённый ClientID
     var yaInput = document.getElementById('authYandexClientId');
     if (yaInput) yaInput.value = Auth.getYandexClientId() || '';
+    /* Вход — тоже готовый экран: держать на нём заставку незачем. */
+    window.__dtReady = true;
   }
 
   async function boot() {
