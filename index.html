@@ -2,7 +2,12 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <!-- interactive-widget=resizes-content — ключевая часть. По умолчанию
+       экранная клавиатура НЕ уменьшает страницу: она просто накрывает её
+       сверху. Поэтому окно высотой 92dvh оставалось во всю высоту экрана,
+       а его нижняя половина вместе со списком уезжала под клавиатуру.
+       С этим значением раскладка честно сжимается до свободного места. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
   <meta name="theme-color" content="#e11d48">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -659,8 +664,12 @@
     .modal.modal-flex {
       display: flex; flex-direction: column;
       overflow: hidden;
-      max-height: calc(92vh - var(--sat));
-      max-height: calc(92dvh - var(--sat));
+      /* --kb вычитается наравне с вырезом: окно должно ужиматься до
+         реально свободного места. Без этого оно поднималось над
+         клавиатурой целиком и уезжало шапкой за верхний край экрана —
+         строка поиска оказывалась выше нуля, то есть за кадром. */
+      max-height: calc(92vh - var(--sat) - var(--kb, 0px));
+      max-height: calc(92dvh - var(--sat) - var(--kb, 0px));
       padding-bottom: 0;
     }
     .modal.modal-flex > .modal-header { flex: 0 0 auto; margin-bottom: 12px; }
@@ -951,6 +960,12 @@
     .modal-overlay {
       position: fixed; inset: 0; background: rgba(28,25,23,0.35);
       z-index: 200; display: none; align-items: flex-end; justify-content: center;
+      /* --kb — сколько снизу занимает клавиатура. Считается из
+         visualViewport (см. wireKeyboardInset) и нужен как запасной путь:
+         не всякий WebView слушается interactive-widget в мете, а окно
+         обязано подниматься над клавиатурой в любом случае. */
+      padding-bottom: var(--kb, 0px);
+      transition: padding-bottom 0.12s ease-out;
     }
     /* Список контактов вызывается из карточки «Новый клиент», то есть поверх
        уже открытой модалки. У всех окон был одинаковый z-index, и список
@@ -959,7 +974,18 @@
     /* Экран входа лежит на z-index 500, поэтому выбор страны должен быть выше:
        иначе список честно открывается, но остаётся за экраном входа. */
     #ccSheet { z-index: 650; }
-    #contactsPickModal .modal { max-height: 86vh; }
+    /* Высоту считаем от «динамического» вьюпорта, а не от статического:
+       статический vh не знает про клавиатуру и всегда равен полному
+       экрану. Строка с vh оставлена запасной для старых движков. */
+    #contactsPickModal .modal {
+      max-height: calc(86vh - var(--kb, 0px));
+      max-height: calc(86dvh - var(--kb, 0px));
+    }
+    /* Шапка с поиском и счётчиком не должна уезжать вместе со списком:
+       искать, не видя строку поиска, невозможно. */
+    #contactsPickModal .contact-pick-head { flex: 0 0 auto; }
+    #contactsPickModal #contactsAddBtn { flex: 0 0 auto; margin-top: 12px; }
+
     .modal-overlay.show { display: flex; }
     /* Свой диалог: спрашиваем и предупреждаем в стилистике приложения,
        а не системным окном браузера с чужими шрифтами и кнопками. */
@@ -1056,7 +1082,11 @@
       /* без этого прокручиваемое содержимое рисуется поверх скруглённых углов */
       overflow-x: hidden;
       width: 100%; max-width: 480px;
-      max-height: calc(92vh - var(--sat));
+      /* Клавиатура вычитается у всех окон, а не только у списков с
+         поиском: в форме клиента и в форме занятия поля ввода тоже
+         есть, и прятать их под клавиатурой так же нельзя. */
+      max-height: calc(92vh - var(--sat) - var(--kb, 0px));
+      max-height: calc(92dvh - var(--sat) - var(--kb, 0px));
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
       padding: 8px max(20px, var(--sal)) calc(24px + var(--sab)) max(20px, var(--sar));
@@ -1743,8 +1773,15 @@
       padding: 0 4px;
     }
     .contact-pick-list {
-      max-height: 52vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
-      margin: 4px -4px 14px;
+      /* Было max-height: 52vh — то есть «половина экрана» независимо от
+         того, сколько экрана осталось. Когда вылезала клавиатура, список
+         сохранял прежнюю высоту, выталкивал кнопку «Добавить выбранных»
+         за нижний край и сам наполовину уходил под клавиатуру.
+         Теперь список просто забирает то место, что реально свободно. */
+      flex: 1 1 auto; min-height: 80px;
+      overflow-y: auto; -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+      margin: 4px -4px 0;
     }
     /* Ряд контакта — тот же .person-row. Два одинаковых набора правил
        рядом жить не должны: подкрутишь один, забудешь другой, и экраны
@@ -1808,7 +1845,7 @@
   </div>
 
   <div class="modal-overlay" id="contactsPickModal">
-    <div class="modal">
+    <div class="modal modal-flex">
       <div class="modal-handle"></div>
       <div class="modal-header">
         <h2>Контакты телефона</h2>
@@ -2526,7 +2563,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-17 · 53',
+    BUILD: '2026-08-18 · 54',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -10051,6 +10088,47 @@
        Отметки держим в UI._multiChosen, а не в DOM: список фильтруется
        поиском, и отмеченный человек, уехавший из выдачи, обязан остаться
        отмеченным. Была бы правда в чекбоксах — он бы молча пропадал. */
+    /* —— Клавиатура и окна ——
+       Запасной путь на случай, если движок не слушается
+       interactive-widget в мете (старые WebView, часть прошивок).
+
+       visualViewport — это то, что человек реально видит: при выезде
+       клавиатуры его высота уменьшается, а layout-вьюпорт остаётся
+       прежним. Разница между ними и есть высота клавиатуры. Кладём её
+       в --kb, и окна поднимаются над ней вместо того, чтобы прятаться
+       под неё. */
+    (function wireKeyboardInset() {
+      var vv = window.visualViewport;
+      if (!vv) return;
+      var raf = null;
+      function apply() {
+        raf = null;
+        /* offsetTop учитывает случай, когда движок не сжимает страницу,
+           а сдвигает её вверх целиком. */
+        var inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+        /* Мелкие колебания (панель браузера, инерция прокрутки) в расчёт
+           не берём — иначе окно будет дёргаться на пару пикселей. */
+        if (inset < 80) inset = 0;
+        document.documentElement.style.setProperty('--kb', Math.round(inset) + 'px');
+      }
+      function schedule() { if (raf === null) raf = requestAnimationFrame(apply); }
+      vv.addEventListener('resize', schedule);
+      vv.addEventListener('scroll', schedule);
+      apply();
+    })();
+
+    /* Поле поиска не должно оказаться под клавиатурой в момент, когда в
+       него ставят курсор. Ждём, пока раскладка устоится, и только потом
+       подтягиваем — сразу после focus размеры ещё старые. */
+    document.addEventListener('focusin', function (e) {
+      var el = e.target;
+      if (!el || (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA')) return;
+      if (!el.closest('.modal-overlay.show')) return;
+      setTimeout(function () {
+        try { el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (err) {}
+      }, 250);
+    });
+
     (function wireMultiPick() {
       var list = UI.$('multiPickList');
       var search = UI.$('multiPickSearch');
