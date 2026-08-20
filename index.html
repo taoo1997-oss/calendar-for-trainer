@@ -664,12 +664,7 @@
     .modal.modal-flex {
       display: flex; flex-direction: column;
       overflow: hidden;
-      /* --kb вычитается наравне с вырезом: окно должно ужиматься до
-         реально свободного места. Без этого оно поднималось над
-         клавиатурой целиком и уезжало шапкой за верхний край экрана —
-         строка поиска оказывалась выше нуля, то есть за кадром. */
-      max-height: calc(92vh - var(--sat) - var(--kb, 0px));
-      max-height: calc(92dvh - var(--sat) - var(--kb, 0px));
+      max-height: calc(100% - var(--sat) - 8px);
       padding-bottom: 0;
     }
     .modal.modal-flex > .modal-header { flex: 0 0 auto; margin-bottom: 12px; }
@@ -960,12 +955,21 @@
     .modal-overlay {
       position: fixed; inset: 0; background: rgba(28,25,23,0.35);
       z-index: 200; display: none; align-items: flex-end; justify-content: center;
-      /* --kb — сколько снизу занимает клавиатура. Считается из
-         visualViewport (см. wireKeyboardInset) и нужен как запасной путь:
-         не всякий WebView слушается interactive-widget в мете, а окно
-         обязано подниматься над клавиатурой в любом случае. */
-      padding-bottom: var(--kb, 0px);
-      transition: padding-bottom 0.12s ease-out;
+      /* —— Одно измерение вместо трёх поправок ——
+         Подложка занимает ровно ту область, которую человек реально
+         видит: --vvh это высота visualViewport в пикселях, --vvtop —
+         сдвиг, если движок не сжимает страницу, а поднимает её целиком.
+
+         Так было не всегда, и прошлый вариант стоит помнить. Клавиатуру
+         вычитали в двух местах сразу — отступом у подложки и из высоты
+         окна, — а на телефонах, где срабатывает interactive-widget,
+         страница сжимается ещё и сама. Три вычета одной и той же
+         клавиатуры: окно схлопывалось в маленькую карточку, потом
+         перелетало вверх, открывая расписание под собой. Здесь вычитать
+         нечего в принципе: сколько намерили, столько и заняли. */
+      top: var(--vvtop, 0px);
+      height: var(--vvh, 100%);
+      bottom: auto;
     }
     /* Список контактов вызывается из карточки «Новый клиент», то есть поверх
        уже открытой модалки. У всех окон был одинаковый z-index, и список
@@ -977,10 +981,7 @@
     /* Высоту считаем от «динамического» вьюпорта, а не от статического:
        статический vh не знает про клавиатуру и всегда равен полному
        экрану. Строка с vh оставлена запасной для старых движков. */
-    #contactsPickModal .modal {
-      max-height: calc(86vh - var(--kb, 0px));
-      max-height: calc(86dvh - var(--kb, 0px));
-    }
+    #contactsPickModal .modal { max-height: calc(100% - var(--sat) - 8px); }
     /* Шапка с поиском и счётчиком не должна уезжать вместе со списком:
        искать, не видя строку поиска, невозможно. */
     #contactsPickModal .contact-pick-head { flex: 0 0 auto; }
@@ -1082,11 +1083,9 @@
       /* без этого прокручиваемое содержимое рисуется поверх скруглённых углов */
       overflow-x: hidden;
       width: 100%; max-width: 480px;
-      /* Клавиатура вычитается у всех окон, а не только у списков с
-         поиском: в форме клиента и в форме занятия поля ввода тоже
-         есть, и прятать их под клавиатурой так же нельзя. */
-      max-height: calc(92vh - var(--sat) - var(--kb, 0px));
-      max-height: calc(92dvh - var(--sat) - var(--kb, 0px));
+      /* Проценты, а не vh: считаем от подложки, которая уже равна
+         видимой области. Клавиатура тем самым учтена ровно один раз. */
+      max-height: calc(100% - var(--sat) - 8px);
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
       padding: 8px max(20px, var(--sal)) calc(24px + var(--sab)) max(20px, var(--sar));
@@ -1693,7 +1692,7 @@
 
     @media (min-width: 480px) {
       .modal-overlay { align-items: center; padding: 20px; }
-      .modal { border-radius: 20px; max-height: 85vh; padding: 16px 24px 24px; }
+      .modal { border-radius: 20px; max-height: calc(100% - 40px); padding: 16px 24px 24px; }
     }
 
     .storage-warn {
@@ -2563,7 +2562,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-18 · 54',
+    BUILD: '2026-08-19 · 55',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -10088,46 +10087,34 @@
        Отметки держим в UI._multiChosen, а не в DOM: список фильтруется
        поиском, и отмеченный человек, уехавший из выдачи, обязан остаться
        отмеченным. Была бы правда в чекбоксах — он бы молча пропадал. */
-    /* —— Клавиатура и окна ——
-       Запасной путь на случай, если движок не слушается
-       interactive-widget в мете (старые WebView, часть прошивок).
+    /* —— Видимая область и окна ——
+       visualViewport — это то, что человек реально видит. При выезде
+       клавиатуры его высота уменьшается; на части движков страница
+       вдобавок сжимается сама, на других — просто сдвигается вверх.
+       Нам всё равно, каким способом: мы не считаем клавиатуру, мы
+       измеряем оставшееся место и отдаём его окнам. Один замер — один
+       источник правды, и складывать поправки друг на друга больше
+       нечего.
 
-       visualViewport — это то, что человек реально видит: при выезде
-       клавиатуры его высота уменьшается, а layout-вьюпорт остаётся
-       прежним. Разница между ними и есть высота клавиатуры. Кладём её
-       в --kb, и окна поднимаются над ней вместо того, чтобы прятаться
-       под неё. */
-    (function wireKeyboardInset() {
+       Прошлая попытка вычитала высоту клавиатуры отступом и из высоты
+       окна одновременно, и на телефонах, где страница сжимается сама,
+       получалось троекратно: окно схлопывалось и прыгало. */
+    (function wireViewportBox() {
       var vv = window.visualViewport;
-      if (!vv) return;
+      var root = document.documentElement;
+      if (!vv) { root.style.setProperty('--vvh', '100%'); return; }
       var raf = null;
       function apply() {
         raf = null;
-        /* offsetTop учитывает случай, когда движок не сжимает страницу,
-           а сдвигает её вверх целиком. */
-        var inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-        /* Мелкие колебания (панель браузера, инерция прокрутки) в расчёт
-           не берём — иначе окно будет дёргаться на пару пикселей. */
-        if (inset < 80) inset = 0;
-        document.documentElement.style.setProperty('--kb', Math.round(inset) + 'px');
+        root.style.setProperty('--vvh', Math.round(vv.height) + 'px');
+        root.style.setProperty('--vvtop', Math.round(vv.offsetTop) + 'px');
       }
       function schedule() { if (raf === null) raf = requestAnimationFrame(apply); }
       vv.addEventListener('resize', schedule);
       vv.addEventListener('scroll', schedule);
+      window.addEventListener('orientationchange', schedule);
       apply();
     })();
-
-    /* Поле поиска не должно оказаться под клавиатурой в момент, когда в
-       него ставят курсор. Ждём, пока раскладка устоится, и только потом
-       подтягиваем — сразу после focus размеры ещё старые. */
-    document.addEventListener('focusin', function (e) {
-      var el = e.target;
-      if (!el || (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA')) return;
-      if (!el.closest('.modal-overlay.show')) return;
-      setTimeout(function () {
-        try { el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (err) {}
-      }, 250);
-    });
 
     (function wireMultiPick() {
       var list = UI.$('multiPickList');
