@@ -2627,7 +2627,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-21 · 56',
+    BUILD: '2026-08-21 · 57',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -2648,21 +2648,27 @@
      * письмо ему неоткуда. Письмо уходит через FormSubmit — сервис-пересыльщик:
      * принимает POST и кладёт содержимое в почту владельца адреса.
      *
-     * FEEDBACK_ENDPOINT намеренно вынесен отдельной строкой. Сейчас в нём
-     * открытый адрес — так работает первая, активирующая отправка. После неё
-     * FormSubmit пришлёт письмо со ссылкой активации и постоянным ключом вида
-     * https://formsubmit.co/ajax/abcdef123456. Ключ нужно подставить сюда
-     * вместо адреса: почта перестанет лежать в открытом виде в исходнике
-     * страницы, который читают сборщики спама.
+     * В FEEDBACK_ENDPOINT стоит постоянный ключ, выданный сервисом после
+     * подтверждения адреса. Открытой почты в ссылке нет намеренно: страница
+     * публичная, и адрес из неё собрали бы сборщики спама.
      *
-     * FEEDBACK_EMAIL остаётся: он показывается человеку, если отправка не
-     * прошла и письмо приходится слать руками.
+     * По той же причине сам адрес хранится в base64. Это не защита, а помеха:
+     * простые сборщики ищут по странице регулярным выражением вида «что-то
+     * собака что-то точка что-то» и такой строки не найдут. Тот, кто откроет
+     * консоль, прочтёт адрес за секунду — и пусть, он и так написан в письмах.
+     * Адрес нужен ровно в двух местах: показать человеку, если письмо не ушло,
+     * и подставить в mailto:.
      */
-    FEEDBACK_EMAIL: '800kosya4ok008@gmail.com',
-    FEEDBACK_ENDPOINT: 'https://formsubmit.co/ajax/800kosya4ok008@gmail.com',
+    FEEDBACK_ENDPOINT: 'https://formsubmit.co/ajax/2079e6c014db6d0810a67accf8c35570',
+    FEEDBACK_EMAIL_B64: 'ODAwa29zeWE0b2swMDhAZ21haWwuY29t',
     /* Сколько ждём ответ сервиса, прежде чем считать отправку неудачной. */
     FEEDBACK_TIMEOUT_MS: 20000
   };
+
+  /* Раскодированный адрес — им пользуются диалог отказа и ссылка mailto:. */
+  CONFIG.FEEDBACK_EMAIL = (function () {
+    try { return atob(CONFIG.FEEDBACK_EMAIL_B64); } catch (e) { return ''; }
+  })();
 
   /* =========================================================
    * 1b. I18N — язык интерфейса
@@ -3486,9 +3492,12 @@
     'Письмо скопировано': 'Message copied',
     'Скопировать не удалось': 'Copying failed',
     'Не удалось открыть почту': 'Could not open the mail app',
-    'Нет связи с сервером': 'no connection to the server',
-    'Сервер не ответил вовремя': 'the server did not answer in time',
-    'Сервис не принял письмо': 'the service rejected the message',
+    'нет связи. Проверьте интернет': 'no connection. Check your internet',
+    'сервер не ответил вовремя': 'the server did not answer in time',
+    'сервис отправки сейчас недоступен': 'the delivery service is unavailable right now',
+    'Это письмо уже отправлено': 'That message has already been sent',
+    'Такое же сообщение ушло меньше двух минут назад. Если хотите добавить подробностей — допишите их в текст.':
+      'The same message went out less than two minutes ago. If you have more to add, extend the text.',
     'Адрес для отправки не настроен': 'the delivery address is not configured',
     'неизвестная причина': 'reason unknown',
 
@@ -3553,7 +3562,6 @@
     [/^Не удалось отправить: ([\s\S]+)$/, function (m) {
       return 'Could not send: ' + this.t(m[1]);
     }],
-    [/^Сервер ответил ошибкой (\d+)$/, 'the server answered with error $1'],
     [/^Похоже, нет связи\. Текст сохранён в окне — можно повторить позже или отправить письмо самому на (.+)\.$/,
       'Looks like there is no connection. Your text is still in the window — retry later, or send the message yourself to $1.'],
 
@@ -6736,6 +6744,22 @@
       'Другое'
     ],
     _sending: false,
+    _lastSent: null,
+
+    /**
+     * Открыто ли приложение обёрткой, а не браузером.
+     *
+     * На window.__isNativeApp полагаться нельзя: в разборе первого же
+     * настоящего письма пришло «сайт в браузере» при живом AndroidBridge
+     * и DanceTrainerApp в строке устройства. Значит обёртка эту функцию
+     * не выставляет. Спрашиваем то, что действительно есть.
+     */
+    isNative() {
+      try { if (window.__isNativeApp && window.__isNativeApp()) return true; } catch (e) {}
+      if (window.AndroidBridge || window.AndroidContacts) return true;
+      try { return /DanceTrainerApp/i.test(navigator.userAgent || ''); } catch (e) {}
+      return false;
+    },
 
     /**
      * Сведения о среде. Ровно то, без чего невозможно понять причину:
@@ -6747,11 +6771,8 @@
       var lines = [];
       var push = function (k, v) { lines.push(k + ': ' + v); };
 
-      var native = false;
-      try { native = !!(window.__isNativeApp && window.__isNativeApp()); } catch (e) {}
-
       push('Сборка', CONFIG.BUILD);
-      push('Где открыто', native ? 'приложение (APK)' : 'сайт в браузере');
+      push('Где открыто', this.isNative() ? 'приложение (APK)' : 'сайт в браузере');
 
       if (window.AndroidBridge && typeof window.AndroidBridge.sourceMode === 'function') {
         var mode = '';
@@ -6774,11 +6795,24 @@
         ', групп ' + State.clubGroups.length);
 
       /* Размер хранилища: переполненный localStorage — частая причина
-         «данные не сохраняются», и по числу это видно сразу. */
+         «данные не сохраняются», и по числу это видно сразу.
+         Ключ у каждого аккаунта свой (STORAGE_KEY + id), поэтому считаем
+         и его, и все соседние: в первом же настоящем письме здесь стоял
+         ноль при 36 клиентах — читался голый STORAGE_KEY, которого нет. */
       try {
-        var raw = localStorage.getItem(CONFIG.STORAGE_KEY) || '';
-        push('Объём данных', Math.round(raw.length / 1024) + ' КБ');
-      } catch (e) {}
+        var mine = localStorage.getItem(State.dataKey()) || '';
+        var all = 0;
+        for (var i = 0; i < localStorage.length; i++) {
+          var k = localStorage.key(i);
+          if (k && k.indexOf(CONFIG.STORAGE_KEY) === 0) {
+            all += (localStorage.getItem(k) || '').length;
+          }
+        }
+        push('Объём данных', Math.round(mine.length / 1024) + ' КБ' +
+          (all > mine.length ? ' (всего в хранилище ' + Math.round(all / 1024) + ' КБ)' : ''));
+      } catch (e) {
+        push('Объём данных', 'не удалось прочитать');
+      }
 
       try { push('Экран', window.innerWidth + '×' + window.innerHeight); } catch (e) {}
       try { push('Устройство', navigator.userAgent); } catch (e) {}
@@ -6837,12 +6871,12 @@
         });
       } catch (err) {
         if (timer) clearTimeout(timer);
-        if (err && err.name === 'AbortError') throw new Error('Сервер не ответил вовремя');
-        throw new Error('Нет связи с сервером');
+        if (err && err.name === 'AbortError') throw this._fail('сервер не ответил вовремя', 'timeout');
+        throw this._fail('нет связи. Проверьте интернет', err && err.message);
       }
       if (timer) clearTimeout(timer);
 
-      if (!res.ok) throw new Error('Сервер ответил ошибкой ' + res.status);
+      if (!res.ok) throw this._fail('сервис отправки сейчас недоступен', 'HTTP ' + res.status);
 
       /* Ответ у сервиса JSON, но при сбое может прийти и HTML-страница —
          разбор оборачиваем, чтобы не падать с невнятным SyntaxError. */
@@ -6850,10 +6884,26 @@
       try { body = await res.json(); } catch (e) {}
       var ok = body && (body.success === true || body.success === 'true');
       if (!ok) {
-        var why = (body && (body.message || body.error)) || 'Сервис не принял письмо';
-        throw new Error(String(why));
+        throw this._fail('сервис отправки сейчас недоступен',
+          (body && (body.message || body.error)) || 'ответ без success');
       }
       return true;
+    },
+
+    /**
+     * Ошибка с двумя лицами.
+     *
+     * Сервис-пересыльщик отвечает по-английски и своими словами:
+     * в первом же разборе человек увидел на экране «This form needs
+     * Activation…». Мне это было полезно, Юлии и Алесе — нет. Наружу
+     * идёт короткая понятная причина, подробность остаётся в консоли,
+     * где её и ищут при разборе.
+     */
+    _fail(human, detail) {
+      if (detail) console.warn('[feedback]', detail);
+      var e = new Error(human);
+      e.detail = detail || '';
+      return e;
     },
 
     /** Письмо руками: ссылка mailto: с уже подставленным текстом. */
@@ -9936,6 +9986,25 @@
         diagnostics: withDiag ? Feedback.diagnostics() : ''
       };
 
+      /* —— Один текст — одно письмо ——
+         В разборе первой отправки на почту пришли два одинаковых письма
+         с одним временем до секунды. Блокировка кнопки на время запроса
+         такого не даёт, значит причина не в ней — то ли повтор со стороны
+         сервиса, то ли что-то в WebView. Причину ещё искать, а лишние
+         письма мешают уже сейчас: одинаковый текст в пределах двух минут
+         повторно не уходит. */
+      var stamp = data.email + '\u0000' + data.message;
+      var last = Feedback._lastSent;
+      if (last && last.stamp === stamp && (Date.now() - last.at) < 120000) {
+        UI.notify({
+          icon: '📨',
+          title: 'Это письмо уже отправлено',
+          text: 'Такое же сообщение ушло меньше двух минут назад. ' +
+            'Если хотите добавить подробностей — допишите их в текст.'
+        });
+        return;
+      }
+
       /* Адрес запоминаем сразу: даже если письмо не уйдёт, второй раз
          его набирать не придётся. */
       Services.updateSettings({ feedbackEmail: data.email });
@@ -9946,6 +10015,7 @@
       Controllers._setFeedbackStatus('Отправляю письмо…');
 
       Feedback.send(data).then(function () {
+        Feedback._lastSent = { stamp: stamp, at: Date.now() };
         UI.$('feedbackMessage').value = '';
         Controllers._renderFeedbackCounter();
         Controllers._setFeedbackStatus('');
