@@ -2627,7 +2627,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-21 · 58',
+    BUILD: '2026-08-21 · 59',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -6942,6 +6942,52 @@
    * ========================================================= */
   const UI = {
     $(id) { return document.getElementById(id); },
+
+    /* —— Прокрутка внутри окна, а не всей страницы ——
+     * scrollIntoView двигает сразу всех предков элемента. Список внутри
+     * окна встаёт как надо, но заодно уезжает страница под окном, а на
+     * телефоне — и само окно: заголовок уходит за верхний край. Ровно
+     * это видно на записи открытия обратной связи.
+     *
+     * Считаем смещение сами и двигаем ровно один контейнер.
+     */
+    scrollIntoBox(box, item, smooth) {
+      if (!box || !item) return;
+      try {
+        var br = box.getBoundingClientRect();
+        var ir = item.getBoundingClientRect();
+        var top = box.scrollTop + (ir.top - br.top) - (br.height - ir.height) / 2;
+        top = Math.max(0, top);
+        try { box.scrollTo({ top: top, behavior: smooth ? 'smooth' : 'auto' }); }
+        catch (e) { box.scrollTop = top; }
+      } catch (e) {}
+    },
+
+    /**
+     * Фокус на поле без рывка.
+     *
+     * Обычный focus() на телефоне делает две вещи разом: поднимает
+     * клавиатуру и подтягивает поле в видимую область — прокручивая при
+     * этом и окно, и страницу. Прокрутку отключаем, а если поле и правда
+     * не видно, доводим только само окно.
+     *
+     * Применяется там, где фокус — ответ на действие человека (нажал
+     * «Сохранить», а поле заполнено неверно). При открытии окна фокус не
+     * ставится вовсе: человек ещё не решил, с какого поля начать.
+     */
+    focusField(el) {
+      if (!el) return;
+      try { el.focus({ preventScroll: true }); }
+      catch (e) { try { el.focus(); } catch (e2) {} }
+      var box = el.closest ? el.closest('.modal') : null;
+      if (!box) return;
+      try {
+        var br = box.getBoundingClientRect();
+        var ir = el.getBoundingClientRect();
+        if (ir.top >= br.top && ir.bottom <= br.bottom) return; // уже на виду
+        this.scrollIntoBox(box, el, true);
+      } catch (e) {}
+    },
     /* —— Свои диалоги ——
        Браузерные confirm/alert/prompt выглядят чужеродно: системный шрифт,
        кнопки другой формы, в WebView вообще всплывает «страница сообщает».
@@ -7028,7 +7074,9 @@
 
       modal.classList.add('show');
       document.body.style.overflow = 'hidden';
-      if (o.input) setTimeout(function () { input.focus(); }, 60);
+      /* Поле в этом окне одно и всегда на виду — фокус ставим, но без
+         прокрутки: иначе окно дёргается ровно в момент появления. */
+      if (o.input) setTimeout(function () { UI.focusField(input); }, 60);
 
       return new Promise(function (resolve) { UI._askResolve = resolve; });
     },
@@ -7073,7 +7121,9 @@
       // Выбранное подводим под палец, иначе в списке месяцев его не видно
       setTimeout(function () {
         var act = list.querySelector('.pick-item.active');
-        if (act && act.scrollIntoView) act.scrollIntoView({ block: 'center' });
+        /* Прокручиваем само окно, а не всё дерево: список выбора живёт
+           внутри .modal, и scrollIntoView увёл бы вместе с ним страницу. */
+        if (act) UI.scrollIntoBox(sheet.querySelector('.modal') || list, act);
       }, 40);
 
       return new Promise(function (resolve) { UI._pickResolve = resolve; });
@@ -7325,13 +7375,13 @@
       hoursEl.addEventListener('click', function (e) {
         var it = e.target.closest('[data-h]');
         if (!it) return;
-        it.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        UI.scrollIntoBox(hoursEl, it, true);
         setTimeout(function () { syncFromScroll(hoursEl, 'h'); }, 120);
       });
       minsEl.addEventListener('click', function (e) {
         var it = e.target.closest('[data-m]');
         if (!it) return;
-        it.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        UI.scrollIntoBox(minsEl, it, true);
         setTimeout(function () { syncFromScroll(minsEl, 'm'); }, 120);
       });
     },
@@ -7353,8 +7403,8 @@
       minsEl.querySelectorAll('.time-picker-item').forEach(function (it) { it.classList.toggle('active', it === mItem); });
       // scroll after layout
       setTimeout(function () {
-        if (hItem) hItem.scrollIntoView({ block: 'center' });
-        if (mItem) mItem.scrollIntoView({ block: 'center' });
+        UI.scrollIntoBox(hoursEl, hItem);
+        UI.scrollIntoBox(minsEl, mItem);
       }, 30);
     },
     /* —— Открытые окна и системная кнопка «назад» ——
@@ -8708,7 +8758,7 @@
           var abonPrice = priceEl ? parseInt(priceEl.value, 10) || 0 : 0;
           if (!(abonPrice > 0)) {
             UI.showToast('Укажите стоимость абонемента');
-            if (priceEl) { priceEl.classList.add('phone-incomplete'); priceEl.focus(); }
+            if (priceEl) { priceEl.classList.add('phone-incomplete'); UI.focusField(priceEl); }
             break;
           }
           if (priceEl) priceEl.classList.remove('phone-incomplete');
@@ -8865,7 +8915,7 @@
                 showAuthGate('login');
                 authLoginFill('login', r.login || loginRaw);
                 var lp = document.getElementById('loginPass');
-                if (lp) { lp.value = ''; lp.focus(); }
+                if (lp) { lp.value = ''; UI.focusField(lp); }
               }
               return;
             }
@@ -9157,7 +9207,7 @@
       if (!payload.name.trim()) return;
       if (!Domain.isValidPhone(payload.phone)) {
         UI.showToast('Введите номер полностью: 11 цифр');
-        UI.$('clientPhone').focus();
+        UI.focusField(UI.$('clientPhone'));
         return;
       }
       if (id) {
@@ -9655,7 +9705,7 @@
       if (!payload.name.trim()) { UI.showToast('Укажите имя'); return; }
       if (!Domain.isValidPhone(payload.phone)) {
         UI.showToast('Введите номер полностью: 11 цифр');
-        UI.$('clubMemberPhone').focus();
+        UI.focusField(UI.$('clubMemberPhone'));
         return;
       }
       if (id) { Services.updateClubMember(id, payload); UI.showToast('Сохранено'); }
@@ -9915,8 +9965,11 @@
       Controllers._renderFeedbackCounter();
       Controllers._setFeedbackStatus('');
       UI.$('feedbackDiagBox').classList.add('hidden');
+      /* Фокус при открытии не ставим намеренно. Автофокус поднимал
+         клавиатуру и уводил окно вверх вместе с заголовком — на записи
+         это выглядело как рывок. Человек сам выберет, с какого поля
+         начать; поля видны все сразу. */
       UI.openModal('feedbackModal');
-      setTimeout(function () { (known ? msgEl : emailEl).focus(); }, 80);
     },
 
     pickFeedbackTopic() {
@@ -9968,14 +10021,14 @@
 
       if (!Auth.isEmail(email)) {
         Controllers._setFeedbackStatus('Проверьте адрес почты — на него придёт ответ', true);
-        UI.$('feedbackEmail').focus();
+        UI.focusField(UI.$('feedbackEmail'));
         return;
       }
       /* Письма из одного слова разбирать невозможно: по ним не понять
          ни что сломалось, ни где. Просим хотя бы пару фраз. */
       if (message.length < 10) {
         Controllers._setFeedbackStatus('Опишите проблему подробнее — хотя бы одним предложением', true);
-        UI.$('feedbackMessage').focus();
+        UI.focusField(UI.$('feedbackMessage'));
         return;
       }
 
@@ -10295,7 +10348,10 @@
               nativeValue.set.call(el, Domain.formatNational(c.d, digits));
               repaint();
               showIncomplete();
-              el.focus();
+              /* Возврат курсора в поле после выбора страны — продолжение
+                 действия человека, а не появление окна. Но прокрутку всё
+                 равно гасим: список стран закрывается, и рывок был бы виден. */
+              UI.focusField(el);
             }
           };
           openPicker();
