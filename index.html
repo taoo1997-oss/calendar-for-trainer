@@ -2051,6 +2051,11 @@
         <button type="button" class="btn btn-secondary btn-block btn-sm" data-action="tour-restart">🎓 Пройти обучение заново</button>
         <p class="text-sm text-muted" style="margin-top:8px;font-size:0.72rem;">Короткий тур по разделам приложения — 6 экранов.</p>
       </div>
+      <div class="settings-block">
+        <h3>Обратная связь</h3>
+        <button type="button" class="btn btn-secondary btn-block btn-sm" data-action="feedback-open">✉️ Написать разработчику</button>
+        <p class="text-sm text-muted" style="margin-top:8px;font-size:0.72rem;">Что-то не работает, потерялись данные или не хватает возможности — напишите. Ответ придёт на почту, которую вы укажете.</p>
+      </div>
       </div>
 
       <div class="settings-group" data-settings-group="look">
@@ -2426,6 +2431,66 @@
     </div>
   </div>
 
+  <!--
+    Обратная связь.
+
+    Отдельное окно, а не ссылка mailto: у половины людей вход по телефону,
+    почтового приложения на устройстве может не быть вовсе, а во вшитом
+    WebView mailto: нередко просто не открывается. Поэтому адрес человек
+    вводит сам, а письмо уходит запросом со страницы.
+  -->
+  <div class="modal-overlay" id="feedbackModal">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">Написать разработчику</div>
+        <button type="button" class="modal-close" data-close="feedbackModal">×</button>
+      </div>
+      <form id="feedbackForm">
+        <p class="text-sm text-muted mb-2">Опишите, что случилось. Если ошибка повторяется — напишите, после каких действий: так её найдут быстрее.</p>
+
+        <div class="form-group">
+          <label>О чём сообщение</label>
+          <button type="button" class="select-btn" data-action="feedback-topic">
+            <span id="feedbackTopicLabel">Ошибка в работе</span>
+            <span class="select-btn-caret">▾</span>
+          </button>
+          <input type="hidden" id="feedbackTopic" value="Ошибка в работе">
+        </div>
+
+        <div class="form-group">
+          <label>Ваша почта для ответа *</label>
+          <input type="email" id="feedbackEmail" placeholder="you@example.com" autocomplete="email" inputmode="email">
+          <p class="text-sm text-muted" style="margin-top:6px;font-size:0.72rem;">Нужна только для ответа. Если вы входили по телефону, почты у приложения нет — впишите любую свою.</p>
+        </div>
+
+        <div class="form-group">
+          <label>Сообщение *</label>
+          <textarea id="feedbackMessage" rows="6" maxlength="2000" placeholder="Что произошло и что вы делали до этого…"></textarea>
+          <p class="text-sm text-muted" style="margin-top:6px;font-size:0.72rem;"><span id="feedbackCounter">0</span> / 2000</p>
+        </div>
+
+        <div class="form-group" style="margin-bottom:12px;">
+          <label class="checkbox-item" style="margin:0;cursor:pointer;">
+            <input type="checkbox" id="feedbackDiagOn" checked style="width:20px;height:20px;accent-color:var(--primary);">
+            <span style="font-weight:500;font-size:0.875rem;">Приложить сведения о приложении</span>
+          </label>
+          <p class="text-sm text-muted" style="margin-top:6px;font-size:0.72rem;padding-left:32px;">
+            Номер сборки, устройство, способ входа и число записей. Имена, телефоны и суммы не отправляются.
+            <button type="button" class="link-btn" data-action="feedback-diag-toggle">Показать</button>
+          </p>
+          <pre id="feedbackDiagBox" class="hidden" data-no-i18n style="margin-top:8px;padding:10px;border-radius:10px;background:rgba(0,0,0,0.05);font-size:0.7rem;line-height:1.5;white-space:pre-wrap;word-break:break-word;"></pre>
+        </div>
+
+        <p class="text-sm text-muted mb-2 hidden" id="feedbackStatus"></p>
+
+        <div class="flex gap-2 mt-3">
+          <button type="button" class="btn btn-secondary btn-block" data-close="feedbackModal">Отмена</button>
+          <button type="submit" class="btn btn-primary btn-block" id="feedbackSubmit">Отправить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   </div><!-- /appShell -->
 
   <!-- Свой диалог вместо браузерного confirm/alert/prompt -->
@@ -2562,7 +2627,7 @@
   const CONFIG = {
     /* Номер сборки. Меняется при каждой правке — виден внизу Настроек.
        Если на экране старый номер, значит браузер отдаёт кэш, а не новый файл. */
-    BUILD: '2026-08-19 · 55',
+    BUILD: '2026-08-21 · 56',
     STORAGE_KEY: 'dance_trainer_v3',
     USERS_KEY: 'dance_trainer_users_v1',
     DAY_START_HOUR: 8,
@@ -2576,7 +2641,27 @@
       yandexClientId: '', clubMonth: ''
     },
     /* ClientID можно задать здесь или в Настройках */
-    YANDEX_CLIENT_ID: 'ca84af634c284a99b2a6ab6ce1d9b378'
+    YANDEX_CLIENT_ID: 'ca84af634c284a99b2a6ab6ce1d9b378',
+
+    /* —— Обратная связь ——
+     * Своего сервера у приложения нет: index.html лежит на Pages, отправить
+     * письмо ему неоткуда. Письмо уходит через FormSubmit — сервис-пересыльщик:
+     * принимает POST и кладёт содержимое в почту владельца адреса.
+     *
+     * FEEDBACK_ENDPOINT намеренно вынесен отдельной строкой. Сейчас в нём
+     * открытый адрес — так работает первая, активирующая отправка. После неё
+     * FormSubmit пришлёт письмо со ссылкой активации и постоянным ключом вида
+     * https://formsubmit.co/ajax/abcdef123456. Ключ нужно подставить сюда
+     * вместо адреса: почта перестанет лежать в открытом виде в исходнике
+     * страницы, который читают сборщики спама.
+     *
+     * FEEDBACK_EMAIL остаётся: он показывается человеку, если отправка не
+     * прошла и письмо приходится слать руками.
+     */
+    FEEDBACK_EMAIL: '800kosya4ok008@gmail.com',
+    FEEDBACK_ENDPOINT: 'https://formsubmit.co/ajax/800kosya4ok008@gmail.com',
+    /* Сколько ждём ответ сервиса, прежде чем считать отправку неудачной. */
+    FEEDBACK_TIMEOUT_MS: 20000
   };
 
   /* =========================================================
@@ -3366,6 +3451,47 @@
     'Чтение файла: НЕ УДАЛОСЬ': 'Reading the file: FAILED',
     'причина неизвестна': 'reason unknown',
 
+    /* Обратная связь */
+    'Обратная связь': 'Feedback',
+    'Написать разработчику': 'Contact the developer',
+    'Что-то не работает, потерялись данные или не хватает возможности — напишите. Ответ придёт на почту, которую вы укажете.':
+      'Something broken, data missing, a feature you need — write in. The reply goes to the address you provide.',
+    'Опишите, что случилось. Если ошибка повторяется — напишите, после каких действий: так её найдут быстрее.':
+      'Describe what happened. If it keeps happening, say what you did beforehand — that makes it much easier to find.',
+    'О чём сообщение': 'What is this about',
+    'Ошибка в работе': 'Something is broken',
+    'Пропали или задвоились данные': 'Data lost or duplicated',
+    'Проблема со входом или синхронизацией': 'Sign-in or sync problem',
+    'Предложение — чего не хватает': 'Suggestion — something missing',
+    'Другое': 'Something else',
+    'Ваша почта для ответа *': 'Your email for the reply *',
+    'Нужна только для ответа. Если вы входили по телефону, почты у приложения нет — впишите любую свою.':
+      'Used only to reply. If you signed in with a phone number the app has no address for you — enter any of yours.',
+    'Сообщение *': 'Message *',
+    'Что произошло и что вы делали до этого…': 'What happened, and what you were doing before…',
+    'Приложить сведения о приложении': 'Attach app details',
+    'Номер сборки, устройство, способ входа и число записей. Имена, телефоны и суммы не отправляются.':
+      'Build number, device, sign-in method and record counts. Names, phone numbers and amounts are never sent.',
+    'Показать': 'Show',
+    'Отправляю письмо…': 'Sending the message…',
+    'Проверьте адрес почты — на него придёт ответ':
+      'Check the email address — the reply goes there',
+    'Опишите проблему подробнее — хотя бы одним предложением':
+      'Please describe the problem in more detail — at least one sentence',
+    'Письмо отправлено': 'Message sent',
+    'Письмо не ушло': 'The message did not go through',
+    'Повторю позже': 'I will retry later',
+    'Открыть почтовое приложение': 'Open the mail app',
+    'Скопировать письмо': 'Copy the message',
+    'Письмо скопировано': 'Message copied',
+    'Скопировать не удалось': 'Copying failed',
+    'Не удалось открыть почту': 'Could not open the mail app',
+    'Нет связи с сервером': 'no connection to the server',
+    'Сервер не ответил вовремя': 'the server did not answer in time',
+    'Сервис не принял письмо': 'the service rejected the message',
+    'Адрес для отправки не настроен': 'the delivery address is not configured',
+    'неизвестная причина': 'reason unknown',
+
     /* Ошибки */
     'Неверный формат': 'Invalid format',
     'операция прервана': 'the operation was interrupted',
@@ -3422,6 +3548,15 @@
 
   /* —— Строки, собранные из кусков —— */
   I18N.RULES = [
+    /* —— Обратная связь —— */
+    [/^Спасибо\. Ответ придёт на (.+)\.$/, 'Thank you. The reply will come to $1.'],
+    [/^Не удалось отправить: ([\s\S]+)$/, function (m) {
+      return 'Could not send: ' + this.t(m[1]);
+    }],
+    [/^Сервер ответил ошибкой (\d+)$/, 'the server answered with error $1'],
+    [/^Похоже, нет связи\. Текст сохранён в окне — можно повторить позже или отправить письмо самому на (.+)\.$/,
+      'Looks like there is no connection. Your text is still in the window — retry later, or send the message yourself to $1.'],
+
     [/^Аккаунт (.+) уже зарегистрирован — войдите в него$/,
       'Account $1 is already registered — sign in instead'],
     [/^Аккаунт создан: (.+)$/, 'Account created: $1'],
@@ -6580,6 +6715,179 @@
   };
 
   /* =========================================================
+   * 5b. FEEDBACK — письмо разработчику
+   * ---------------------------------------------------------
+   * Приложение целиком лежит на статическом хостинге, своего сервера
+   * у него нет. Отправить почту напрямую страница не может — SMTP
+   * из браузера недоступен. Поэтому письмо уходит POST-запросом в
+   * FormSubmit, а тот пересылает содержимое на почту владельца.
+   *
+   * Сервис чужой и однажды может отвалиться, поэтому неудача здесь —
+   * штатный исход, а не сбой: текст остаётся в окне, человеку
+   * предлагают открыть почтовое приложение или скопировать письмо.
+   * Ни один набранный символ не должен пропасть из-за плохой связи.
+   * ========================================================= */
+  const Feedback = {
+    TOPICS: [
+      'Ошибка в работе',
+      'Пропали или задвоились данные',
+      'Проблема со входом или синхронизацией',
+      'Предложение — чего не хватает',
+      'Другое'
+    ],
+    _sending: false,
+
+    /**
+     * Сведения о среде. Ровно то, без чего невозможно понять причину:
+     * какая сборка открыта, сайт это или APK, каким способом вошли,
+     * сколько записей. Ни имён, ни телефонов, ни сумм — письмо уходит
+     * через чужой сервис, и личным данным там не место.
+     */
+    diagnostics() {
+      var lines = [];
+      var push = function (k, v) { lines.push(k + ': ' + v); };
+
+      var native = false;
+      try { native = !!(window.__isNativeApp && window.__isNativeApp()); } catch (e) {}
+
+      push('Сборка', CONFIG.BUILD);
+      push('Где открыто', native ? 'приложение (APK)' : 'сайт в браузере');
+
+      if (window.AndroidBridge && typeof window.AndroidBridge.sourceMode === 'function') {
+        var mode = '';
+        try { mode = window.AndroidBridge.sourceMode(); } catch (e) {}
+        push('Источник страницы', mode === 'remote' ? 'GitHub Pages' : 'вшитая копия в APK');
+      }
+
+      var u = State.currentUser;
+      push('Вход', !u ? 'нет' : (u.yandexId ? 'Яндекс ID' : 'локальный аккаунт'));
+      push('Синхронизация', Cloud.canSync() ? 'доступна' : 'недоступна');
+      push('Связь', (navigator.onLine === false ? 'нет сети' : 'есть'));
+
+      push('Язык', I18N.lang);
+      push('Тема', (State.settings && State.settings.theme) || 'light');
+      push('Валюта', Money.code || '—');
+
+      push('Записей', 'клиентов ' + State.clients.length +
+        ', занятий ' + State.classes.length +
+        ', членов клуба ' + State.clubMembers.length +
+        ', групп ' + State.clubGroups.length);
+
+      /* Размер хранилища: переполненный localStorage — частая причина
+         «данные не сохраняются», и по числу это видно сразу. */
+      try {
+        var raw = localStorage.getItem(CONFIG.STORAGE_KEY) || '';
+        push('Объём данных', Math.round(raw.length / 1024) + ' КБ');
+      } catch (e) {}
+
+      try { push('Экран', window.innerWidth + '×' + window.innerHeight); } catch (e) {}
+      try { push('Устройство', navigator.userAgent); } catch (e) {}
+      try { push('Время', new Date().toString()); } catch (e) {}
+
+      return lines.join('\n');
+    },
+
+    /** Готовое тело письма — оно же уходит в почтовое приложение при отказе. */
+    composeBody(data) {
+      var parts = [data.message];
+      if (data.diagnostics) {
+        parts.push('');
+        parts.push('— — — сведения о приложении — — —');
+        parts.push(data.diagnostics);
+      }
+      return parts.join('\n');
+    },
+
+    /**
+     * Отправка. Возвращает Promise, который либо выполняется, либо
+     * отклоняется с человеческой причиной — её показывают на экране.
+     */
+    async send(data) {
+      var endpoint = CONFIG.FEEDBACK_ENDPOINT;
+      if (!endpoint) throw new Error('Адрес для отправки не настроен');
+
+      /* Без ограничения по времени зависшая сеть держала бы кнопку
+         «Отправляю…» бесконечно. */
+      var ctrl = null, timer = null;
+      try { ctrl = new AbortController(); } catch (e) {}
+      if (ctrl) {
+        timer = setTimeout(function () { try { ctrl.abort(); } catch (e) {} }, CONFIG.FEEDBACK_TIMEOUT_MS);
+      }
+
+      var payload = {
+        _subject: 'Танцевальный тренер · ' + data.topic,
+        _template: 'table',
+        _captcha: 'false',
+        /* FormSubmit ставит Reply-To по полю email — ответ уйдёт человеку. */
+        email: data.email,
+        _replyto: data.email,
+        Тема: data.topic,
+        Сообщение: data.message,
+        Сборка: CONFIG.BUILD
+      };
+      if (data.diagnostics) payload['Сведения о приложении'] = data.diagnostics;
+
+      var res;
+      try {
+        res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: ctrl ? ctrl.signal : undefined
+        });
+      } catch (err) {
+        if (timer) clearTimeout(timer);
+        if (err && err.name === 'AbortError') throw new Error('Сервер не ответил вовремя');
+        throw new Error('Нет связи с сервером');
+      }
+      if (timer) clearTimeout(timer);
+
+      if (!res.ok) throw new Error('Сервер ответил ошибкой ' + res.status);
+
+      /* Ответ у сервиса JSON, но при сбое может прийти и HTML-страница —
+         разбор оборачиваем, чтобы не падать с невнятным SyntaxError. */
+      var body = null;
+      try { body = await res.json(); } catch (e) {}
+      var ok = body && (body.success === true || body.success === 'true');
+      if (!ok) {
+        var why = (body && (body.message || body.error)) || 'Сервис не принял письмо';
+        throw new Error(String(why));
+      }
+      return true;
+    },
+
+    /** Письмо руками: ссылка mailto: с уже подставленным текстом. */
+    mailtoUrl(data) {
+      return 'mailto:' + CONFIG.FEEDBACK_EMAIL +
+        '?subject=' + encodeURIComponent('Танцевальный тренер · ' + data.topic) +
+        '&body=' + encodeURIComponent(this.composeBody(data));
+    },
+
+    /** Копирование с запасным путём: в WebView clipboard API часто закрыт. */
+    async copy(text) {
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+          return true;
+        }
+      } catch (e) {}
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.top = '-1000px';
+        document.body.appendChild(ta);
+        ta.select();
+        var done = document.execCommand('copy');
+        document.body.removeChild(ta);
+        return !!done;
+      } catch (e) {}
+      return false;
+    }
+  };
+
+  /* =========================================================
    * 6. UI
    * ========================================================= */
   const UI = {
@@ -8679,6 +8987,11 @@
         }
         case 'import-trigger': UI.$('importFile').click(); break;
 
+        /* —— Обратная связь —— */
+        case 'feedback-open': Controllers.openFeedback(); break;
+        case 'feedback-topic': Controllers.pickFeedbackTopic(); break;
+        case 'feedback-diag-toggle': Controllers.toggleFeedbackDiag(); break;
+
         /* —— Язык и обучение —— */
         case 'pick-currency':
           UI.pick({
@@ -9524,6 +9837,166 @@
       UI.closeModal('authModal');
       UI.showToast('Профиль очищен');
     },
+    /* —— Обратная связь —— */
+
+    openFeedback() {
+      var emailEl = UI.$('feedbackEmail');
+      var msgEl = UI.$('feedbackMessage');
+      var topicEl = UI.$('feedbackTopic');
+      var topicLabel = UI.$('feedbackTopicLabel');
+      if (!emailEl || !msgEl) return;
+
+      /* Почту подставляем сама: у входа по email она уже известна, а если
+         человек писал раньше — берём ту, что указывал в прошлый раз.
+         Заново набирать адрес с телефона — лишний повод бросить письмо. */
+      var known = (State.settings && State.settings.feedbackEmail) || '';
+      if (!known) {
+        var login = (State.currentUser && State.currentUser.login) || '';
+        if (Auth.isEmail(login)) known = Auth.normalizeLogin(login);
+      }
+      emailEl.value = known;
+
+      /* Поле сообщения при открытии не трогаем. Если человек вышел из окна
+         на середине письма — телефон зазвонил, приложение свернулось — текст
+         должен ждать на месте. Очищается оно только после успешной отправки. */
+
+      topicEl.value = Feedback.TOPICS[0];
+      topicLabel.textContent = Feedback.TOPICS[0];
+      Controllers._renderFeedbackCounter();
+      Controllers._setFeedbackStatus('');
+      UI.$('feedbackDiagBox').classList.add('hidden');
+      UI.openModal('feedbackModal');
+      setTimeout(function () { (known ? msgEl : emailEl).focus(); }, 80);
+    },
+
+    pickFeedbackTopic() {
+      var cur = UI.$('feedbackTopic').value;
+      UI.pick({
+        title: 'О чём сообщение',
+        value: cur,
+        options: Feedback.TOPICS.map(function (x) { return { value: x, label: I18N.t(x) }; })
+      }).then(function (val) {
+        if (!val) return;
+        UI.$('feedbackTopic').value = val;
+        UI.$('feedbackTopicLabel').textContent = I18N.t(val);
+      });
+    },
+
+    toggleFeedbackDiag() {
+      var box = UI.$('feedbackDiagBox');
+      if (!box) return;
+      if (box.classList.contains('hidden')) {
+        box.textContent = Feedback.diagnostics();
+        box.classList.remove('hidden');
+      } else {
+        box.classList.add('hidden');
+      }
+    },
+
+    _renderFeedbackCounter() {
+      var msg = UI.$('feedbackMessage');
+      var c = UI.$('feedbackCounter');
+      if (msg && c) c.textContent = String(msg.value.length);
+    },
+
+    _setFeedbackStatus(text, isError) {
+      var el = UI.$('feedbackStatus');
+      if (!el) return;
+      el.textContent = text ? I18N.t(text) : '';
+      el.classList.toggle('hidden', !text);
+      el.style.color = isError ? 'var(--danger, #dc2626)' : '';
+    },
+
+    submitFeedback(e) {
+      if (e && e.preventDefault) e.preventDefault();
+      if (Feedback._sending) return;
+
+      var email = (UI.$('feedbackEmail').value || '').trim();
+      var message = (UI.$('feedbackMessage').value || '').trim();
+      var topic = UI.$('feedbackTopic').value || Feedback.TOPICS[0];
+      var withDiag = !!(UI.$('feedbackDiagOn') && UI.$('feedbackDiagOn').checked);
+
+      if (!Auth.isEmail(email)) {
+        Controllers._setFeedbackStatus('Проверьте адрес почты — на него придёт ответ', true);
+        UI.$('feedbackEmail').focus();
+        return;
+      }
+      /* Письма из одного слова разбирать невозможно: по ним не понять
+         ни что сломалось, ни где. Просим хотя бы пару фраз. */
+      if (message.length < 10) {
+        Controllers._setFeedbackStatus('Опишите проблему подробнее — хотя бы одним предложением', true);
+        UI.$('feedbackMessage').focus();
+        return;
+      }
+
+      var data = {
+        email: Auth.normalizeLogin(email),
+        message: message,
+        topic: topic,
+        diagnostics: withDiag ? Feedback.diagnostics() : ''
+      };
+
+      /* Адрес запоминаем сразу: даже если письмо не уйдёт, второй раз
+         его набирать не придётся. */
+      Services.updateSettings({ feedbackEmail: data.email });
+
+      var btn = UI.$('feedbackSubmit');
+      Feedback._sending = true;
+      if (btn) { btn.disabled = true; btn.textContent = I18N.t('Отправляю…'); }
+      Controllers._setFeedbackStatus('Отправляю письмо…');
+
+      Feedback.send(data).then(function () {
+        UI.$('feedbackMessage').value = '';
+        Controllers._renderFeedbackCounter();
+        Controllers._setFeedbackStatus('');
+        UI.closeModal('feedbackModal');
+        UI.notify({
+          icon: '✅',
+          title: 'Письмо отправлено',
+          text: 'Спасибо. Ответ придёт на ' + data.email + '.'
+        });
+      }).catch(function (err) {
+        Controllers._setFeedbackStatus('Не удалось отправить: ' + (err.message || 'неизвестная причина'), true);
+        Controllers._offerFeedbackFallback(data);
+      }).then(function () {
+        Feedback._sending = false;
+        if (btn) { btn.disabled = false; btn.textContent = I18N.t('Отправить'); }
+      });
+    },
+
+    /**
+     * Запасные пути, когда сервис-пересыльщик недоступен. Текст уже набран,
+     * и потерять его из-за чужого сервера нельзя: отдаём человеку письмо
+     * в руки — в почтовое приложение или в буфер обмена.
+     */
+    _offerFeedbackFallback(data) {
+      UI.ask({
+        icon: '📪',
+        title: 'Письмо не ушло',
+        text: 'Похоже, нет связи. Текст сохранён в окне — можно повторить позже ' +
+          'или отправить письмо самому на ' + CONFIG.FEEDBACK_EMAIL + '.',
+        cancelText: 'Повторю позже',
+        choices: [
+          { label: 'Открыть почтовое приложение', value: 'mail' },
+          { label: 'Скопировать письмо', value: 'copy' }
+        ]
+      }).then(function (choice) {
+        if (choice === 'mail') {
+          try { window.location.href = Feedback.mailtoUrl(data); }
+          catch (e) { UI.showToast('Не удалось открыть почту'); }
+          return;
+        }
+        if (choice === 'copy') {
+          var text = CONFIG.FEEDBACK_EMAIL + '\n' +
+            'Тема: Танцевальный тренер · ' + data.topic + '\n\n' +
+            Feedback.composeBody(data);
+          Feedback.copy(text).then(function (ok) {
+            UI.showToast(ok ? 'Письмо скопировано' : 'Скопировать не удалось');
+          });
+        }
+      });
+    },
+
     exportData() {
       var blob = new Blob([Services.exportJson()], { type: 'application/json' });
       var a = document.createElement('a');
@@ -9562,7 +10035,14 @@
       /* Ручка для автотестов и разбора проблем: из консоли браузера
          доступно window.__dt.State / .Services / .Domain / .UI */
       try {
-        window.__dt = { CONFIG: CONFIG, State: State, Services: Services, Domain: Domain, UI: UI, Auth: Auth };
+        window.__dt = {
+          CONFIG: CONFIG, State: State, Services: Services, Domain: Domain,
+          UI: UI, Auth: Auth,
+          /* Отправка письма — единственная часть приложения, которая ходит
+             в чужой сервис. Проверять её можно только на подменённом fetch,
+             а для этого модуль должен быть виден снаружи замыкания. */
+          Feedback: Feedback, Controllers: Controllers, I18N: I18N
+        };
 
       /* —— Системная кнопка «назад» в APK ——
          В обёртке WebView аппаратная кнопка не доходит до страницы: Android
@@ -9958,6 +10438,18 @@
     if (clubMemberForm) clubMemberForm.addEventListener('submit', function (e) { Controllers.saveClubMember(e); });
     var clubGroupForm = UI.$('clubGroupForm');
     if (clubGroupForm) clubGroupForm.addEventListener('submit', function (e) { Controllers.saveClubGroup(e); });
+    var feedbackForm = UI.$('feedbackForm');
+    if (feedbackForm) feedbackForm.addEventListener('submit', function (e) { Controllers.submitFeedback(e); });
+    var feedbackMessageEl = UI.$('feedbackMessage');
+    if (feedbackMessageEl) {
+      feedbackMessageEl.addEventListener('input', function () {
+        Controllers._renderFeedbackCounter();
+        /* Как только человек начал править письмо, прежняя жалоба на
+           неудачу сбивает с толку — убираем её. */
+        Controllers._setFeedbackStatus('');
+      });
+    }
+
     var classTitleEl = UI.$('classTitle');
     if (classTitleEl) {
       classTitleEl.addEventListener('input', function () {
